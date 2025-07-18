@@ -1,0 +1,342 @@
+// === Twitch Verbindung ===
+siteURL = new URL(window.location);
+TwitchChannel = siteURL.searchParams.get("channel").toLowerCase().split(",");
+// === Verbindung erstellen ===
+const client = new tmi.Client({
+  options: {
+    debug: true
+  },
+  channels: TwitchChannel
+});
+
+// === Chatnamen speichern ===
+let chatUsers = new Set();
+
+client.on('chat', (channel, userstate, message, self) => {
+  if (self) return;
+  chatUsers.add(userstate['display-name']);
+});
+
+// === Canvas und Kontext ===
+const canvas = document.getElementById('brbCanvas');
+const ctx = canvas.getContext('2d');
+canvas.width = window.innerWidth;
+canvas.height = window.innerHeight;
+
+// === Bild-Objekte ===
+const groundImg = new Image();
+const characterImg = new Image();
+const babyImg = new Image();
+const babyGrownImg = new Image();
+const cloudImg = new Image();
+const ghostImg = new Image();
+const gravestoneImg = new Image();
+const heartImg = new Image();
+
+// === Konstanten für Lebensdauern und Spawning ===
+const BABY_GROW_TIME = 20 * 1000; // 20 Sekunden
+const BABY_DEATH_TIME = 80 * 1000; // 1 Minute 20 Sekunden (20s wachsen + 60s erwachsen)
+const ADULT_DEATH_TIME = 120 * 1000; // 2 Minuten
+const MIN_CHAT_USERS_TO_SPAWN = 10;
+const MAX_CHARACTERS = 25;
+
+// === Hilfsfunktion für zufälligen Namen ===
+function assignRandomName(männchen) {
+  if (chatUsers.size > 0) {
+    let items = Array.from(chatUsers);
+    const name = items[Math.floor(Math.random() * items.length)];
+    männchen.name = name;
+  } else {
+    männchen.name = 'Unbekannt';
+  }
+}
+
+// === Männchen-Klasse ===
+class Männchen {
+  constructor(x, y, isBaby = false, isGrownBaby = false) {
+    this.x = x;
+    this.y = y;
+    this.width = 40;
+    this.height = 40;
+    this.speed = Math.random() * 1.5 + 0.5;
+    this.direction = Math.random() < 0.5 ? -1 : 1; // -1 für links, 1 für rechts
+    this.isBaby = isBaby;
+    this.isGrownBaby = isGrownBaby; // Neuer Status für ausgewachsenes Baby
+    this.state = 'alive'; // Neuer Zustand: 'alive', 'dying', 'ghost', 'gravestone', 'loving'
+    this.animationTimer = 0; // Timer für Animationen
+    this.ghostYOffset = 0; // Für die Geisteranimation
+    this.spawnTime = Date.now(); // Zeitpunkt der Erstellung
+
+    assignRandomName(this);
+
+    if (isBaby) {
+      // Babys wachsen nach BABY_GROW_TIME zu ausgewachsenen Babys heran
+      setTimeout(() => {
+        this.isBaby = false;
+        this.isGrownBaby = true;
+      }, BABY_GROW_TIME);
+      // Babys sterben nach BABY_DEATH_TIME
+      setTimeout(() => {
+        if (this.state === 'alive') { // Nur sterben, wenn nicht schon gestorben
+          männchenListe = männchenListe.filter(m => m !== this);
+        }
+      }, BABY_DEATH_TIME);
+    } else {
+      // Erwachsene sterben nach ADULT_DEATH_TIME
+      setTimeout(() => {
+        if (this.state === 'alive') { // Nur sterben, wenn nicht schon gestorben
+          männchenListe = männchenListe.filter(m => m !== this);
+        }
+      }, ADULT_DEATH_TIME);
+    }
+  }
+
+  move() {
+    if (this.state === 'alive') { // Nur bewegen, wenn lebendig
+      this.x += this.speed * this.direction;
+      if (this.x < 0) {
+        this.x = 0;
+        this.direction = 1;
+      } else if (this.x > canvas.width - this.width) {
+        this.x = canvas.width - this.width;
+        this.direction = -1;
+      }
+    } else if (this.state === 'ghost') {
+      this.ghostYOffset -= 0.5; // Steigt in den Himmel
+    }
+  }
+
+  draw() {
+    // Grafiken basierend auf Zustand und Typ
+    let imgToDraw = characterImg;
+    if (this.isBaby) {
+      imgToDraw = babyImg;
+    } else if (this.isGrownBaby) {
+      imgToDraw = babyGrownImg;
+    }
+
+    ctx.save(); // Aktuellen Canvas-Zustand speichern
+
+    if (this.state === 'alive' || this.state === 'dying' || this.state === 'loving') {
+      if (this.direction === -1) { // Wenn die Figur nach links läuft (Originalrichtung des Models)
+        ctx.drawImage(imgToDraw, this.x, this.y, this.width, this.height);
+      } else { // Wenn die Figur nach rechts läuft, spiegeln
+        ctx.translate(this.x + this.width, this.y); // Zum Drehpunkt (rechte Seite der Figur) verschieben
+        ctx.scale(-1, 1); // Horizontal spiegeln
+        ctx.drawImage(imgToDraw, 0, 0, this.width, this.height); // Bei 0,0 zeichnen, da der Ursprung verschoben ist
+      }
+    }
+
+    ctx.restore(); // Canvas-Zustand wiederherstellen
+
+    // Namen zeichnen (nicht für Babys oder Geister/Grabsteine)
+    if (this.name && !this.isBaby && !this.isGrownBaby && this.state !== 'ghost' && this.state !== 'gravestone') {
+      ctx.fillStyle = 'white';
+      ctx.font = '12px Arial';
+      // Textposition anpassen, wenn gespiegelt wird, damit der Name korrekt über der Figur ist
+      if (this.direction === -1) {
+        ctx.fillText(this.name, this.x, this.y - 5);
+      } else {
+        // Wenn gespiegelt, muss der Text auch entsprechend verschoben werden, um über der Figur zu sein.
+        ctx.fillText(this.name, this.x + this.width - ctx.measureText(this.name).width, this.y - 5);
+      }
+    }
+
+    // Spezielle Animationen und Grafiken
+    if (this.state === 'dying') {
+      ctx.drawImage(cloudImg, this.x - 10, this.y - 30, this.width + 20, this.height + 20); // Wolke
+    } else if (this.state === 'ghost') {
+      ctx.drawImage(ghostImg, this.x, this.y + this.ghostYOffset, this.width, this.height); // Geist steigt
+    } else if (this.state === 'gravestone') {
+      ctx.drawImage(gravestoneImg, this.x, this.y + this.height - 20, this.width, 20); // Grabstein am Boden
+    } else if (this.state === 'loving') {
+      ctx.drawImage(heartImg, this.x + this.width / 4, this.y - 20, this.width / 2, this.height / 2); // Herzen
+    }
+  }
+}
+
+// === Listen und Bodenkoordinaten ===
+let männchenListe = [];
+const groundMinY = canvas.height - 100; // Etwas höher als der unterste Rand
+const groundMaxY = canvas.height - 60; // Der ursprüngliche groundY
+
+// === Bildervorlade-Funktion ===
+function loadImages(sources, callback) {
+  let images = {};
+  let loadedImages = 0;
+  let numImages = Object.keys(sources).length;
+
+  for (let src in sources) {
+    images[src] = new Image();
+    images[src].onload = function() {
+      loadedImages++;
+      if (loadedImages >= numImages) {
+        callback(images);
+      }
+    };
+    images[src].src = sources[src];
+  }
+}
+
+// === Initialisierung ===
+async function init() {
+  const imageSources = {
+    ground: 'ground.png',
+    character: 'character.png',
+    baby: 'baby.png',
+    babyGrown: 'baby_grown.png',
+    cloud: 'cloud.png',
+    ghost: 'ghost.png',
+    gravestone: 'gravestone.png',
+    heart: 'heart.png'
+  };
+
+  loadImages(imageSources, function(images) {
+    // Grafiken global zuweisen
+    groundImg.src = images.ground.src;
+    characterImg.src = images.character.src;
+    babyImg.src = images.baby.src;
+    babyGrownImg.src = images.babyGrown.src;
+    cloudImg.src = images.cloud.src;
+    ghostImg.src = images.ghost.src;
+    gravestoneImg.src = images.gravestone.src;
+    heartImg.src = images.heart.src;
+
+    client.connect().then(() => {
+      console.log(`🤖 Bot ist verbunden mit ${TwitchChannel}`);
+
+      // === Spawning-Logik ===
+      if (chatUsers.size < MIN_CHAT_USERS_TO_SPAWN) {
+        console.log(`Weniger als ${MIN_CHAT_USERS_TO_SPAWN} Chat-User (${chatUsers.size}). Keine Charaktere werden gespawnt.`);
+      } else {
+        const numToSpawn = Math.min(chatUsers.size, MAX_CHARACTERS); // Spawne bis zu MAX_CHARACTERS
+        for (let i = 0; i < numToSpawn; i++) {
+          const randomY = Math.random() * (groundMaxY - groundMinY) + groundMinY;
+          männchenListe.push(new Männchen(Math.random() * canvas.width, randomY));
+        }
+        console.log(`Es wurden ${numToSpawn} Charaktere gespawnt.`);
+      }
+
+      animate(); // Starte die Animation nur, wenn die Initialisierung abgeschlossen ist
+    }).catch(console.error);
+  });
+}
+
+// === Kollisionsprüfung ===
+function checkCollision(a, b) {
+  return (
+    a !== b &&
+    Math.abs(a.x - b.x) < a.width &&
+    Math.abs(a.y - b.y) < a.height &&
+    !a.isBaby && !b.isBaby && // Babys kollidieren nicht wie Erwachsene
+    !a.isGrownBaby && !b.isGrownBaby // Ausgewachsene Babys kollidieren auch nicht wie Erwachsene für diese Logik
+  );
+}
+
+// === Kollisionsbehandlung ===
+function handleCollision(a, b) {
+  // Wenn eine der Figuren nicht im "alive"-Zustand ist, ignorieren
+  if (a.state !== 'alive' || b.state !== 'alive') return;
+
+  const r = Math.random();
+  if (r < 0.33) {
+    // Vorbeilaufen - nichts Besonderes zu tun
+  } else if (r < 0.66) {
+    // Töten
+    const victim = Math.random() < 0.5 ? a : b;
+    const killer = (victim === a) ? b : a;
+
+    victim.state = 'dying'; // Opfer geht in den "dying"-Zustand
+    victim.animationTimer = Date.now();
+
+    // Setze den Killer für einen kurzen Moment auf "loving", damit er nicht sofort wieder kollidiert
+    killer.state = 'loving';
+    setTimeout(() => {
+      if (killer.state === 'loving') { // Sicherstellen, dass er nicht schon wieder in einer anderen Kollision ist
+        killer.state = 'alive';
+      }
+    }, 1000); // 1 Sekunde Pause
+
+    // Wolke und dann Geist
+    setTimeout(() => {
+      victim.state = 'ghost'; // Wird zu Geist
+    }, 500); // Nach 0.5 Sekunden (Wolke sollte kurz sichtbar sein)
+
+    // Geist verschwindet, Grabstein erscheint
+    setTimeout(() => {
+      victim.state = 'gravestone'; // Wird zu Grabstein
+    }, 2000); // Geist steigt ca. 1.5 Sekunden
+
+    // Grabstein verschwindet und Figur wird entfernt
+    setTimeout(() => {
+      männchenListe = männchenListe.filter(m => m !== victim);
+    }, 3000); // Grabstein bleibt für 1 Sekunde (2s bis 3s)
+
+  } else {
+    // Baby erzeugen (Verlieben)
+    a.state = 'loving';
+    b.state = 'loving';
+    a.animationTimer = Date.now();
+    b.animationTimer = Date.now();
+
+    // Herzen erscheinen für ca. 2 Sekunden
+    setTimeout(() => {
+      // Setze Figuren wieder auf "alive" und erzeuge Baby
+      if (a.state === 'loving') a.state = 'alive';
+      if (b.state === 'loving') b.state = 'alive';
+
+      const babyX = (a.x + b.x) / 2;
+      const randomY = Math.random() * (groundMaxY - groundMinY) + groundMinY;
+      männchenListe.push(new Männchen(babyX, randomY, true)); // Neues Baby
+
+      // Alle drei laufen hintereinander her (einfache Implementierung: Geschwindigkeiten anpassen)
+      const newSpeed = Math.random() * 0.8 + 0.2; // Etwas langsamer für die Gruppe
+      const newDirection = Math.random() < 0.5 ? -1 : 1;
+      a.speed = newSpeed;
+      b.speed = newSpeed;
+      a.direction = newDirection;
+      b.direction = newDirection;
+
+      // Finden Sie das gerade erstellte Baby und passen Sie seine Geschwindigkeit an
+      // Da es das zuletzt hinzugefügte Element ist, können wir darauf zugreifen
+      const newBaby = männchenListe[männchenListe.length - 1];
+      if (newBaby.isBaby) { // Sicherstellen, dass es wirklich das Baby ist
+        newBaby.speed = newSpeed;
+        newBaby.direction = newDirection;
+      }
+
+    }, 2000); // 2 Sekunden für die Herzen
+  }
+}
+
+// === Boden zeichnen ===
+function drawGround() {
+  ctx.drawImage(groundImg, 0, groundMaxY, canvas.width, canvas.height - groundMaxY);
+}
+
+// === Animationsschleife ===
+function animate() {
+  ctx.clearRect(0, 0, canvas.width, canvas.height);
+  drawGround();
+
+  // Sortiere die Figuren basierend auf ihrer Y-Koordinate (z-index Effekt)
+  // Dies stellt sicher, dass Figuren, die "weiter unten" sind, über denen "weiter oben" gezeichnet werden.
+  männchenListe.sort((a, b) => a.y - b.y);
+
+  männchenListe.forEach(m => m.move());
+  männchenListe.forEach(m => m.draw());
+
+  // Kollisionsprüfung für lebende Erwachsene
+  for (let i = 0; i < männchenListe.length; i++) {
+    for (let j = i + 1; j < männchenListe.length; j++) {
+      if (checkCollision(männchenListe[i], männchenListe[j])) {
+        handleCollision(männchenListe[i], männchenListe[j]);
+      }
+    }
+  }
+
+  requestAnimationFrame(animate);
+}
+
+// === Start der Anwendung ===
+init();
