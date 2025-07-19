@@ -12,10 +12,45 @@
     canvas {
       display: block;
     }
+    /* === Scoreboard CSS NEU === */
+    #scoreboard {
+      position: absolute;
+      top: 10px;
+      left: 10px;
+      background-color: rgba(0, 0, 0, 0.7); /* Semi-transparenter Hintergrund */
+      color: white;
+      padding: 10px;
+      border-radius: 5px;
+      font-family: 'Arial', sans-serif;
+      z-index: 1000; /* Stellt sicher, dass das Scoreboard über dem Canvas liegt */
+    }
+    #scoreboard h2 {
+      margin-top: 0;
+      font-size: 1.2em;
+      text-align: center;
+      border-bottom: 1px solid rgba(255, 255, 255, 0.3);
+      padding-bottom: 5px;
+      margin-bottom: 10px;
+    }
+    #score-list {
+      list-style: none;
+      padding: 0;
+      margin: 0;
+    }
+    #score-list li {
+      padding: 2px 0;
+      font-size: 0.9em;
+    }
+    /* === Ende Scoreboard CSS === */
   </style>
 </head>
 <body>
   <canvas id="brbCanvas"></canvas>
+
+  <div id="scoreboard">
+    <h2>Scoreboard</h2>
+    <ul id="score-list"></ul>
+  </div>
   <script src="tmi.js"></script>
   <script src="chat.js"></script>
 </body>
