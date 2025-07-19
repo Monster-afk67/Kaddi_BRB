@@ -297,7 +297,7 @@ class Männchen {
       //ctx.fillText(this.currentBubble, bubbleX + bubblePadding, bubbleY + bubblePadding + 14);
 	  let emoteImage = new Image;
 	  emoteImage.src = this.currentBubble;
-	  ctx.drawImage(emoteImage, bubbleX + bubblePadding, bubbleY,32,32)
+	  ctx.drawImage(emoteImage, bubbleX + bubblePadding, bubbleY + bubblePadding,32,32)
     }
     // === Ende Emoji/Interaktions-Sprechblase ===
 
