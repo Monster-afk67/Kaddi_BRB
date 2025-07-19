@@ -250,9 +250,9 @@ async function init() {
     babyImg.src = images.baby.src;
     babyGrownImg.src = images.babyGrown.src;
     cloudImg.src = images.cloud.src;
-    ghostImg.src = images.Ghost.src;
-    gravestoneImg.src = images.Gravestone.src;
-    heartImg.src = images.Heart.src;
+    ghostImg.src = images.ghost.src;
+    gravestoneImg.src = images.gravestone.src;
+    heartImg.src = images.heart.src;
 
     // Starte die Animation nur, wenn die Initialisierung abgeschlossen ist
     animate();
