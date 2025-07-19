@@ -27,17 +27,21 @@ client.on('chat', (channel, userstate, message, self) => {
 
   // Füge den User zum allgemeinen Set der Chat-User hinzu
   chatUsers.add(displayName);
-
+  
   // === Emoji-Sprechblasen Feature ===
-  // Eine einfache Regex, um 1 oder 2 gängige Emojis zu erkennen.
-  // Achtung: Dies erkennt möglicherweise nicht alle Unicode-Emojis vollständig oder komplexere Sequenzen.
-  const emojiRegex = /^(\u00a9|\u00ae|[\u2000-\u3300]|\ud83c[\ud000-\udfff]|\ud83d[\ud000-\udfff]|\ud83e[\ud000-\udfff]){1,2}$/u;
-  if (message.match(emojiRegex)) {
+  let emotes=[];
+  try{
+	emotes=Object.keys(userstate["emotes"]);
+  }catch{
+	  emotes=[];
+  }
+
+  if (emotes.length>0) {
     const character = männchenListe.find(m => m.name === displayName && m.state === 'alive');
     if (character) {
-      character.currentBubble = message;
+      character.currentBubble = "https://static-cdn.jtvnw.net/emoticons/v2/"+emotes[0]+"/default/light/3.0";
       character.bubbleDisplayUntil = Date.now() + 3000; // Anzeige für 3 Sekunden
-      console.log(`Emoji '${message}' angezeigt für ${displayName}.`);
+      console.log(`Emoji '${emotes[0]}' angezeigt für ${displayName}.`);
     }
     // Wenn es nur eine Emoji-Nachricht ist, nicht versuchen, einen neuen Charakter zu spawnen
     return;
@@ -273,9 +277,8 @@ class Männchen {
     if (this.currentBubble && Date.now() < this.bubbleDisplayUntil) {
       const bubblePadding = 5;
       ctx.fillStyle = 'rgba(0, 0, 0, 0.7)'; // Semi-transparenter schwarzer Hintergrund
-      const textWidth = ctx.measureText(this.currentBubble).width;
-      const bubbleWidth = textWidth + (2 * bubblePadding);
-      const bubbleHeight = 20 + (2 * bubblePadding); // ca. Texthöhe + Padding
+      const bubbleWidth = 32 + (2 * bubblePadding);
+      const bubbleHeight = 32 + (2 * bubblePadding); // ca. Texthöhe + Padding
       const bubbleX = this.x + (this.width / 2) - (bubbleWidth / 2);
       const bubbleY = this.y - this.height - 25; // Über dem Charakter
 
@@ -291,7 +294,10 @@ class Männchen {
 
       ctx.fillStyle = 'white'; // Emoji-Farbe
       ctx.font = '16px Arial Unicode MS'; // Font, der Emojis unterstützt
-      ctx.fillText(this.currentBubble, bubbleX + bubblePadding, bubbleY + bubblePadding + 14);
+      //ctx.fillText(this.currentBubble, bubbleX + bubblePadding, bubbleY + bubblePadding + 14);
+	  let emoteImage = new Image;
+	  emoteImage.src = this.currentBubble;
+	  ctx.drawImage(emoteImage, bubbleX + bubblePadding, bubbleY,32,32)
     }
     // === Ende Emoji/Interaktions-Sprechblase ===
 
@@ -391,15 +397,15 @@ async function init() {
     ground: 'ground.png',
     character: 'character.png', // Könnte ein allgemeiner Fallback sein oder für eine Startfigur
     baby: 'baby.png',
-    teenager: 'teenager.png', // NEU
-    adult: 'adult.png', // NEU
+    teenager: 'character.png', // NEU
+    adult: 'character.png', // NEU
     cloud: 'cloud.png',
     ghost: 'Ghost.png',
     gravestone: 'Gravestone.png',
     heart: 'Heart.png',
-    soccer: 'soccer.png', // NEU
-    dance: 'dance.png', // NEU
-    game: 'game.png' // NEU
+    soccer: 'Heart.png', // NEU
+    dance: 'Heart.png', // NEU
+    game: 'Heart.png' // NEU
   };
 
   loadImages(imageSources, function(images) {
