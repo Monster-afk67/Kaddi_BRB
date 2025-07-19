@@ -397,15 +397,15 @@ async function init() {
     ground: 'ground.png',
     character: 'character.png', // Könnte ein allgemeiner Fallback sein oder für eine Startfigur
     baby: 'baby.png',
-    teenager: 'character.png', // NEU
-    adult: 'character.png', // NEU
+    teenager: 'teenager.png', // NEU
+    adult: 'adult.png', // NEU
     cloud: 'cloud.png',
     ghost: 'Ghost.png',
     gravestone: 'Gravestone.png',
     heart: 'Heart.png',
-    soccer: 'Heart.png', // NEU
-    dance: 'Heart.png', // NEU
-    game: 'Heart.png' // NEU
+    soccer: 'soccer.png', // NEU
+    dance: 'dance.png', // NEU
+    game: 'game.png' // NEU
   };
 
   loadImages(imageSources, function(images) {
