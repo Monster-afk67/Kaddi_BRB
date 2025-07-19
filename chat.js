@@ -14,6 +14,9 @@ let chatUsers = new Set();
 // === Liste der aktuellen Männchen, um Duplikate zu vermeiden ===
 let activeMaleNames = new Set(); // Speichert die Namen der aktuell angezeigten Männchen
 
+// Flag, um zu steuern, wann die Lebensdauern der Charaktere aktiv sind
+let lifespansActive = false;
+
 client.on('chat', (channel, userstate, message, self) => {
   if (self) return; // Ignoriere Nachrichten vom Bot selbst
 
@@ -31,6 +34,21 @@ client.on('chat', (channel, userstate, message, self) => {
     männchenListe.push(newCharacter);
     activeMaleNames.add(displayName); // Füge den Namen zu den aktiven Namen hinzu
     console.log(`Neuer Charakter für ${displayName} gespawnt. Gesamt: ${männchenListe.length}`);
+
+    // Wenn die Lebensdauern bereits aktiv sind, starte sie sofort für diesen neuen Charakter
+    if (lifespansActive) {
+      newCharacter.startLifespan();
+    } else if (männchenListe.length >= 20) {
+      // Wenn 20 Charaktere erreicht sind (und die Lebensdauern noch nicht aktiv waren)
+      lifespansActive = true;
+      console.log("20 Charaktere erreicht! Lebensdauern starten für alle bestehenden und zukünftigen Charaktere.");
+      männchenListe.forEach(m => {
+        // Starte die Lebensdauer nur, wenn sie noch nicht gestartet wurde
+        if (!m.lifespanTimeoutId) {
+          m.startLifespan();
+        }
+      });
+    }
   }
 });
 
@@ -59,8 +77,7 @@ const heartImg = new Image();
 const BABY_GROW_TIME = 20 * 1000; // 20 Sekunden
 const BABY_DEATH_TIME = 80 * 1000; // 1 Minute 20 Sekunden (20s wachsen + 60s erwachsen)
 const ADULT_DEATH_TIME = 120 * 1000; // 2 Minuten
-const MIN_CHAT_USERS_TO_SPAWN = 10; // Beibehalten, falls du es für eine initiale Spawning-Logik außerhalb des dynamischen Spawning nutzen möchtest
-const MAX_CHARACTERS = 25;
+const MAX_CHARACTERS = 45; // Erhöht auf 45
 const BABY_CREATION_DURATION = 5 * 1000; // Baby-Erstellung dauert 5 Sekunden
 
 // === Hilfsfunktion für zufälligen Namen ===
@@ -81,7 +98,7 @@ class Männchen {
     this.y = y;
     this.width = 40;
     this.height = 40;
-    this.speed = Math.random() * 1.5 + 0.5;
+    this.speed = Math.random() * 1.0 + 0.2; // Spielergeschwindigkeit etwas niedriger (0.2 bis 1.2)
     this.direction = Math.random() < 0.5 ? -1 : 1; // -1 für links, 1 für rechts
     this.isBaby = isBaby;
     this.isGrownBaby = isGrownBaby; // Neuer Status für ausgewachsenes Baby
@@ -89,43 +106,48 @@ class Männchen {
     this.animationTimer = 0; // Timer für Animationen
     this.ghostYOffset = 0; // Für die Geisteranimation
     this.spawnTime = Date.now(); // Zeitpunkt der Erstellung
+    this.lifespanTimeoutId = null; // Speichert die ID des setTimeout für die Lebensdauer
+
+    // Cooldown-Variablen
+    this.babyCooldownUntil = 0; // Timestamp wann die Baby-Erstellungs-Cooldown endet
+    this.interactionCooldownUntil = 0; // Timestamp wann die allgemeine Interaktions-Cooldown endet
 
     // Namen werden direkt zugewiesen, wenn ein spezifischer User chattet.
     // Für initial gespawnte oder Babys wird assignRandomName verwendet.
-    // Falls ein Name schon gesetzt wurde (durch client.on('chat')), wird dieser behalten.
     if (!this.name) {
       assignRandomName(this);
     }
 
-
-    if (isBaby) {
-      // Babys wachsen nach BABY_GROW_TIME zu ausgewachsenen Babys heran
+    // Babys wachsen immer nach BABY_GROW_TIME heran, unabhängig vom Start der Lebensdauern
+    if (this.isBaby) {
       setTimeout(() => {
-        this.isBaby = false;
-        this.isGrownBaby = true;
+        if (this.isBaby) { // Nur wenn es noch ein Baby ist
+          this.isBaby = false;
+          this.isGrownBaby = true;
+          console.log(`${this.name || 'Ein Baby'} ist herangewachsen.`);
+        }
       }, BABY_GROW_TIME);
-      // Babys sterben nach BABY_DEATH_TIME
-      setTimeout(() => {
-        if (this.state === 'alive') { // Nur sterben, wenn nicht schon gestorben
-          männchenListe = männchenListe.filter(m => m !== this);
-          // Entferne den Namen auch aus activeMaleNames, wenn es ein benanntes Männchen war
-          if (this.name && activeMaleNames.has(this.name)) {
-            activeMaleNames.delete(this.name);
-          }
-        }
-      }, BABY_DEATH_TIME);
-    } else {
-      // Erwachsene sterben nach ADULT_DEATH_TIME
-      setTimeout(() => {
-        if (this.state === 'alive') { // Nur sterben, wenn nicht schon gestorben
-          männchenListe = männchenListe.filter(m => m !== this);
-          // Entferne den Namen auch aus activeMaleNames, wenn es ein benanntes Männchen war
-          if (this.name && activeMaleNames.has(this.name)) {
-            activeMaleNames.delete(this.name);
-          }
-        }
-      }, ADULT_DEATH_TIME);
     }
+  }
+
+  // Methode zum Starten der Lebensdauer (Todestimer)
+  startLifespan() {
+    if (this.lifespanTimeoutId) {
+      clearTimeout(this.lifespanTimeoutId); // Stoppt den vorherigen Timer, falls diese Funktion mehrmals aufgerufen wird
+    }
+
+    const deathDelay = this.isBaby ? BABY_DEATH_TIME : ADULT_DEATH_TIME;
+
+    this.lifespanTimeoutId = setTimeout(() => {
+      if (this.state === 'alive') { // Nur sterben, wenn der Charakter noch lebendig ist
+        männchenListe = männchenListe.filter(m => m !== this);
+        // Entferne den Namen auch aus activeMaleNames
+        if (this.name && activeMaleNames.has(this.name)) {
+          activeMaleNames.delete(this.name);
+        }
+        console.log(`${this.name || 'Ein Charakter'} ist durch Lebensdauer gestorben.`);
+      }
+    }, deathDelay);
   }
 
   move() {
@@ -170,14 +192,21 @@ class Männchen {
     if (this.name && !this.isBaby && !this.isGrownBaby && this.state !== 'ghost' && this.state !== 'gravestone') {
       ctx.fillStyle = 'white';
       ctx.font = '12px Arial';
-      // Textposition anpassen, wenn gespiegelt wird, damit der Name korrekt über der Figur ist
-      if (this.direction === -1) {
-        ctx.fillText(this.name, this.x, this.y - 5);
-      } else {
-        // Wenn gespiegelt, muss der Text auch entsprechend verschoben werden, um über der Figur zu sein.
-        ctx.fillText(this.name, this.x + this.width - ctx.measureText(this.name).width, this.y - 5);
+      // Textposition anpassen, wenn gespiegelt wird, damit der Name korrekt über der Figur ist.
+      // Für gespiegelte Figuren muss der Text am rechten Rand der Figur ausgerichtet werden.
+      let textX = this.x;
+      if (this.direction === 1) { // Wenn die Figur nach rechts läuft (gespiegelt)
+          textX = this.x + this.width - ctx.measureText(this.name).width;
       }
+      ctx.fillText(this.name, textX, this.y - 5);
+    } else if (this.name && (this.isBaby || this.isGrownBaby) && this.state !== 'ghost' && this.state !== 'gravestone') {
+        // Namen für Babys und gewachsene Babys anzeigen
+        ctx.fillStyle = 'lightgreen'; // Eine andere Farbe für Babynamen
+        ctx.font = '10px Arial';
+        let textX = this.x + (this.width / 2) - (ctx.measureText(this.name).width / 2); // Zentrieren über dem Baby
+        ctx.fillText(this.name, textX, this.y - 5);
     }
+
 
     // Spezielle Animationen und Grafiken
     if (this.state === 'dying') {
@@ -236,7 +265,7 @@ async function init() {
     ground: 'ground.png',
     character: 'character.png',
     baby: 'baby.png',
-    babyGrown: 'babyGrown.png',
+    babyGrown: 'baby_grown.png',
     cloud: 'cloud.png',
     ghost: 'Ghost.png',
     gravestone: 'Gravestone.png',
@@ -257,25 +286,30 @@ async function init() {
     // Starte die Animation nur, wenn die Initialisierung abgeschlossen ist
     animate();
 
-    // Initiales Spawning der Charaktere basierend auf der aktuellen chatUsers-Größe
+    // Initiales Spawning der Charaktere basierend auf den anfänglich bekannten Chat-Usern
     // Dies geschieht nach dem Laden der Bilder und vor dem Start der Animation
     client.connect().then(() => {
       console.log(`🤖 Bot ist verbunden mit ${TwitchChannel}`);
 
       // Spawne bis zu MAX_CHARACTERS basierend auf den anfänglich bekannten Chat-Usern
-      // Jeder Charakter, der hier gespawnt wird, bekommt einen zufälligen Namen aus chatUsers
+      // Ohne auf MIN_CHAT_USERS_TO_SPAWN zu warten
       const numToSpawn = Math.min(chatUsers.size, MAX_CHARACTERS);
       for (let i = 0; i < numToSpawn; i++) {
         const randomY = Math.random() * (groundMaxY - groundMinY) + groundMinY;
         const newChar = new Männchen(Math.random() * canvas.width, randomY);
-        // assignRandomName wird im Konstruktor bereits aufgerufen, aber wir wollen sicherstellen,
-        // dass der Name auch zu den activeMaleNames hinzugefügt wird, falls es ein echter Chat-User ist.
         if (newChar.name && newChar.name !== 'Unbekannt') {
           activeMaleNames.add(newChar.name);
         }
         männchenListe.push(newChar);
       }
       console.log(`Initial wurden ${numToSpawn} Charaktere gespawnt.`);
+
+      // Prüfen, ob die Lebensdauern direkt nach dem initialen Spawnen beginnen sollen
+      if (männchenListe.length >= 20 && !lifespansActive) {
+        lifespansActive = true;
+        console.log("20 Charaktere erreicht oder überschritten bei Initialisierung. Lebensdauern starten für alle.");
+        männchenListe.forEach(m => m.startLifespan());
+      }
 
     }).catch(console.error);
   });
@@ -288,7 +322,8 @@ function checkCollision(a, b) {
     Math.abs(a.x - b.x) < a.width &&
     Math.abs(a.y - b.y) < a.height &&
     !a.isBaby && !b.isBaby && // Babys kollidieren nicht wie Erwachsene
-    !a.isGrownBaby && !b.isGrownBaby // Ausgewachsene Babys kollidieren auch nicht wie Erwachsene für diese Logik
+    !a.isGrownBaby && !b.isGrownBaby && // Ausgewachsene Babys kollidieren auch nicht wie Erwachsene für diese Logik
+    Date.now() > a.interactionCooldownUntil && Date.now() > b.interactionCooldownUntil // Beide Charaktere dürfen nicht im Interaktions-Cooldown sein
   );
 }
 
@@ -298,6 +333,13 @@ function handleCollision(a, b) {
   if (a.state !== 'alive' || b.state !== 'alive') return;
 
   const r = Math.random();
+
+  // Wenn ein Baby erzeugt werden sollte, aber ein Elternteil im Cooldown ist, behandle es als Vorbeilaufen
+  if (r >= 0.66 && (Date.now() < a.babyCooldownUntil || Date.now() < b.babyCooldownUntil)) {
+      console.log("Baby-Erstellung aufgrund von Cooldown übersprungen.");
+      return; // Behandle als Vorbeilaufen (tu nichts Besonderes)
+  }
+
   if (r < 0.33) {
     // Vorbeilaufen - nichts Besonderes zu tun
   } else if (r < 0.66) {
@@ -342,43 +384,49 @@ function handleCollision(a, b) {
     a.animationTimer = Date.now();
     b.animationTimer = Date.now();
 
+    // Cooldowns für beide Eltern setzen
+    const now = Date.now();
+    a.babyCooldownUntil = now + (20 * 1000); // 20 Sekunden Cooldown für Baby-Erstellung
+    b.babyCooldownUntil = now + (20 * 1000);
+    a.interactionCooldownUntil = now + (10 * 1000); // 10 Sekunden Cooldown für allgemeine Interaktion
+    b.interactionCooldownUntil = now + (10 * 1000);
+    console.log(`${a.name} und ${b.name} sind für ${a.babyCooldownUntil - now}ms (Baby) und ${a.interactionCooldownUntil - now}ms (Interaktion) im Cooldown.`);
+
     // Herzen erscheinen für BABY_CREATION_DURATION (5 Sekunden)
     setTimeout(() => {
       // Setze Figuren wieder auf "alive"
       if (a.state === 'loving') a.state = 'alive';
       if (b.state === 'loving') b.state = 'alive';
 
-      // Einer der beteiligten Eltern stirbt (ohne Animation)
-      const dyingParent = Math.random() < 0.5 ? a : b;
-      männchenListe = männchenListe.filter(m => m !== dyingParent);
-      // Entferne den Namen des sterbenden Elternteils aus activeMaleNames
-      if (dyingParent.name && activeMaleNames.has(dyingParent.name)) {
-        activeMaleNames.delete(dyingParent.name);
-      }
-      console.log(`Einer der Eltern (${dyingParent.name || 'Unbekannt'}) ist nach Baby-Geburt gestorben.`);
+      // KEIN ELTERNTEIL STIRBT.
+      console.log(`Baby von ${a.name} und ${b.name} erstellt. Kein Elternteil ist gestorben.`);
 
       // Baby erzeugen
       const babyX = (a.x + b.x) / 2;
       const randomY = Math.random() * (groundMaxY - groundMinY) + groundMinY;
-      männchenListe.push(new Männchen(babyX, randomY, true)); // Neues Baby
-
-      // Alle drei laufen hintereinander her (einfache Implementierung: Geschwindigkeiten anpassen)
-      const newSpeed = Math.random() * 0.8 + 0.2; // Etwas langsamer für die Gruppe
-      const newDirection = Math.random() < 0.5 ? -1 : 1;
-      // Der überlebende Elternteil
-      const survivingParent = (dyingParent === a) ? b : a;
-      survivingParent.speed = newSpeed;
-      survivingParent.direction = newDirection;
+      const newBaby = new Männchen(babyX, randomY, true); // Neues Baby
+      // Baby bekommt ebenfalls einen Namen aus dem Chat
+      assignRandomName(newBaby);
+      männchenListe.push(newBaby);
 
 
-      // Finden Sie das gerade erstellte Baby und passen Sie seine Geschwindigkeit an
-      const newBaby = männchenListe[männchenListe.length - 1];
-      if (newBaby.isBaby) { // Sicherstellen, dass es wirklich das Baby ist
-        newBaby.speed = newSpeed;
-        newBaby.direction = newDirection;
+      // Eltern bewegen sich in verschiedene Richtungen, um sofortige Kollisionen zu vermeiden
+      if (a.x < b.x) { // a ist links von b
+        a.direction = -1; // a geht nach links
+        b.direction = 1; // b geht nach rechts
+      } else { // b ist links von a
+        a.direction = 1; // a geht nach rechts
+        b.direction = -1; // b geht nach links
       }
+      // Gebe ihnen eine leicht unterschiedliche Geschwindigkeit, um die Trennung zu gewährleisten
+      a.speed = Math.random() * 0.5 + 0.5; // Bereich 0.5 bis 1.0
+      b.speed = Math.random() * 0.5 + 0.5;
 
-    }, BABY_CREATION_DURATION); // 5 Sekunden für die Herzen und Baby-Erstellung
+      // Das Baby bewegt sich in eine zufällige Richtung
+      newBaby.speed = Math.random() * 0.8 + 0.2; // Etwas langsamer für die Gruppe
+      newBaby.direction = Math.random() < 0.5 ? -1 : 1; // Zufällige Richtung für Baby
+
+    }, BABY_CREATION_DURATION);
   }
 }
 
