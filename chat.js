@@ -176,37 +176,31 @@ class Männchen {
 
     ctx.save(); // Aktuellen Canvas-Zustand speichern
 
-    if (this.state === 'alive' || this.state === 'dying' || this.state === 'loving') {
-      if (this.direction === -1) { // Wenn die Figur nach links läuft (Originalrichtung des Models)
-        ctx.drawImage(imgToDraw, this.x, this.y, this.width, this.height);
-      } else { // Wenn die Figur nach rechts läuft, spiegeln
-        ctx.translate(this.x + this.width, this.y); // Zum Drehpunkt (rechte Seite der Figur) verschieben
-        ctx.scale(-1, 1); // Horizontal spiegeln
-        ctx.drawImage(imgToDraw, 0, 0, this.width, this.height); // Bei 0,0 zeichnen, da der Ursprung verschoben ist
-      }
+    if (this.direction === -1) { // Wenn die Figur nach links läuft (Originalrichtung des Models)
+      ctx.drawImage(imgToDraw, this.x, this.y, this.width, this.height);
+    } else { // Wenn die Figur nach rechts läuft, spiegeln
+      ctx.translate(this.x + this.width, this.y); // Zum Drehpunkt (rechte Seite der Figur) verschieben
+      ctx.scale(-1, 1); // Horizontal spiegeln
+      ctx.drawImage(imgToDraw, 0, 0, this.width, this.height); // Bei 0,0 zeichnen, da der Ursprung verschoben ist
     }
 
     ctx.restore(); // Canvas-Zustand wiederherstellen
 
-    // Namen zeichnen (nicht für Babys oder Geister/Grabsteine)
-    if (this.name && !this.isBaby && !this.isGrownBaby && this.state !== 'ghost' && this.state !== 'gravestone') {
-      ctx.fillStyle = 'white';
-      ctx.font = '12px Arial';
-      // Textposition anpassen, wenn gespiegelt wird, damit der Name korrekt über der Figur ist.
-      // Für gespiegelte Figuren muss der Text am rechten Rand der Figur ausgerichtet werden.
+    // Namen zeichnen (nicht für Geister/Grabsteine)
+    if (this.name && this.state !== 'ghost' && this.state !== 'gravestone') {
+      ctx.fillStyle = (this.isBaby || this.isGrownBaby) ? 'lightgreen' : 'white'; // Farbe für Baby/Grown-Baby Namen
+      ctx.font = (this.isBaby || this.isGrownBaby) ? '10px Arial' : '12px Arial';
+
       let textX = this.x;
       if (this.direction === 1) { // Wenn die Figur nach rechts läuft (gespiegelt)
           textX = this.x + this.width - ctx.measureText(this.name).width;
       }
+      // Für Babys und Grown-Babys den Namen zentrieren
+      if (this.isBaby || this.isGrownBaby) {
+          textX = this.x + (this.width / 2) - (ctx.measureText(this.name).width / 2);
+      }
       ctx.fillText(this.name, textX, this.y - 5);
-    } else if (this.name && (this.isBaby || this.isGrownBaby) && this.state !== 'ghost' && this.state !== 'gravestone') {
-        // Namen für Babys und gewachsene Babys anzeigen
-        ctx.fillStyle = 'lightgreen'; // Eine andere Farbe für Babynamen
-        ctx.font = '10px Arial';
-        let textX = this.x + (this.width / 2) - (ctx.measureText(this.name).width / 2); // Zentrieren über dem Baby
-        ctx.fillText(this.name, textX, this.y - 5);
     }
-
 
     // Spezielle Animationen und Grafiken
     if (this.state === 'dying') {
@@ -321,8 +315,7 @@ function checkCollision(a, b) {
     a !== b &&
     Math.abs(a.x - b.x) < a.width &&
     Math.abs(a.y - b.y) < a.height &&
-    !a.isBaby && !b.isBaby && // Babys kollidieren nicht wie Erwachsene
-    !a.isGrownBaby && !b.isGrownBaby && // Ausgewachsene Babys kollidieren auch nicht wie Erwachsene für diese Logik
+    !a.isBaby && !b.isBaby && // Normale Babys können nicht kollidieren
     Date.now() > a.interactionCooldownUntil && Date.now() > b.interactionCooldownUntil // Beide Charaktere dürfen nicht im Interaktions-Cooldown sein
   );
 }
@@ -447,7 +440,7 @@ function animate() {
   männchenListe.forEach(m => m.move());
   männchenListe.forEach(m => m.draw());
 
-  // Kollisionsprüfung für lebende Erwachsene
+  // Kollisionsprüfung für lebende Erwachsene (inkl. ausgewachsene Babys)
   for (let i = 0; i < männchenListe.length; i++) {
     for (let j = i + 1; j < männchenListe.length; j++) {
       if (checkCollision(männchenListe[i], männchenListe[j])) {
