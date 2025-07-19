@@ -265,7 +265,7 @@ async function init() {
     ground: 'ground.png',
     character: 'character.png',
     baby: 'baby.png',
-    babyGrown: 'baby_grown.png',
+    babyGrown: 'babyGrown.png',
     cloud: 'cloud.png',
     ghost: 'Ghost.png',
     gravestone: 'Gravestone.png',
