@@ -11,10 +11,27 @@ const client = new tmi.Client({
 
 // === Chatnamen speichern ===
 let chatUsers = new Set();
+// === Liste der aktuellen Männchen, um Duplikate zu vermeiden ===
+let activeMaleNames = new Set(); // Speichert die Namen der aktuell angezeigten Männchen
 
 client.on('chat', (channel, userstate, message, self) => {
-  if (self) return;
-  chatUsers.add(userstate['display-name']);
+  if (self) return; // Ignoriere Nachrichten vom Bot selbst
+
+  const displayName = userstate['display-name'];
+
+  // Füge den User zum allgemeinen Set der Chat-User hinzu
+  chatUsers.add(displayName);
+
+  // Prüfe, ob bereits ein Charakter für diesen User existiert und angezeigt wird
+  // und ob die maximale Charakteranzahl noch nicht erreicht ist
+  if (!activeMaleNames.has(displayName) && männchenListe.length < MAX_CHARACTERS) {
+    const randomY = Math.random() * (groundMaxY - groundMinY) + groundMinY;
+    const newCharacter = new Männchen(Math.random() * canvas.width, randomY);
+    newCharacter.name = displayName; // Weise den spezifischen Namen zu
+    männchenListe.push(newCharacter);
+    activeMaleNames.add(displayName); // Füge den Namen zu den aktiven Namen hinzu
+    console.log(`Neuer Charakter für ${displayName} gespawnt. Gesamt: ${männchenListe.length}`);
+  }
 });
 
 // === Bot starten ===
@@ -42,7 +59,7 @@ const heartImg = new Image();
 const BABY_GROW_TIME = 20 * 1000; // 20 Sekunden
 const BABY_DEATH_TIME = 80 * 1000; // 1 Minute 20 Sekunden (20s wachsen + 60s erwachsen)
 const ADULT_DEATH_TIME = 120 * 1000; // 2 Minuten
-const MIN_CHAT_USERS_TO_SPAWN = 10;
+const MIN_CHAT_USERS_TO_SPAWN = 10; // Beibehalten, falls du es für eine initiale Spawning-Logik außerhalb des dynamischen Spawning nutzen möchtest
 const MAX_CHARACTERS = 25;
 const BABY_CREATION_DURATION = 5 * 1000; // Baby-Erstellung dauert 5 Sekunden
 
@@ -73,7 +90,13 @@ class Männchen {
     this.ghostYOffset = 0; // Für die Geisteranimation
     this.spawnTime = Date.now(); // Zeitpunkt der Erstellung
 
-    assignRandomName(this);
+    // Namen werden direkt zugewiesen, wenn ein spezifischer User chattet.
+    // Für initial gespawnte oder Babys wird assignRandomName verwendet.
+    // Falls ein Name schon gesetzt wurde (durch client.on('chat')), wird dieser behalten.
+    if (!this.name) {
+      assignRandomName(this);
+    }
+
 
     if (isBaby) {
       // Babys wachsen nach BABY_GROW_TIME zu ausgewachsenen Babys heran
@@ -85,6 +108,10 @@ class Männchen {
       setTimeout(() => {
         if (this.state === 'alive') { // Nur sterben, wenn nicht schon gestorben
           männchenListe = männchenListe.filter(m => m !== this);
+          // Entferne den Namen auch aus activeMaleNames, wenn es ein benanntes Männchen war
+          if (this.name && activeMaleNames.has(this.name)) {
+            activeMaleNames.delete(this.name);
+          }
         }
       }, BABY_DEATH_TIME);
     } else {
@@ -92,6 +119,10 @@ class Männchen {
       setTimeout(() => {
         if (this.state === 'alive') { // Nur sterben, wenn nicht schon gestorben
           männchenListe = männchenListe.filter(m => m !== this);
+          // Entferne den Namen auch aus activeMaleNames, wenn es ein benanntes Männchen war
+          if (this.name && activeMaleNames.has(this.name)) {
+            activeMaleNames.delete(this.name);
+          }
         }
       }, ADULT_DEATH_TIME);
     }
@@ -205,11 +236,11 @@ async function init() {
     ground: 'ground.png',
     character: 'character.png',
     baby: 'baby.png',
-    babyGrown: 'babyGrown.png',
+    babyGrown: 'baby_grown.png',
     cloud: 'cloud.png',
-    ghost: 'Ghost.png',
-    gravestone: 'Gravestone.png',
-    heart: 'Heart.png'
+    ghost: 'ghost.png',
+    gravestone: 'gravestone.png',
+    heart: 'heart.png'
   };
 
   loadImages(imageSources, function(images) {
@@ -219,26 +250,33 @@ async function init() {
     babyImg.src = images.baby.src;
     babyGrownImg.src = images.babyGrown.src;
     cloudImg.src = images.cloud.src;
-    ghostImg.src = images.ghost.src;
-    gravestoneImg.src = images.gravestone.src;
-    heartImg.src = images.heart.src;
+    ghostImg.src = images.Ghost.src;
+    gravestoneImg.src = images.Gravestone.src;
+    heartImg.src = images.Heart.src;
 
+    // Starte die Animation nur, wenn die Initialisierung abgeschlossen ist
+    animate();
+
+    // Initiales Spawning der Charaktere basierend auf der aktuellen chatUsers-Größe
+    // Dies geschieht nach dem Laden der Bilder und vor dem Start der Animation
     client.connect().then(() => {
       console.log(`🤖 Bot ist verbunden mit ${TwitchChannel}`);
 
-      // === Spawning-Logik ===
-      if (chatUsers.size < MIN_CHAT_USERS_TO_SPAWN) { //
-        console.log(`Weniger als ${MIN_CHAT_USERS_TO_SPAWN} Chat-User (${chatUsers.size}). Keine Charaktere werden gespawnt.`); //
-      } else {
-        const numToSpawn = Math.min(chatUsers.size, MAX_CHARACTERS); // Spawne bis zu MAX_CHARACTERS
-        for (let i = 0; i < numToSpawn; i++) { //
-          const randomY = Math.random() * (groundMaxY - groundMinY) + groundMinY; //
-          männchenListe.push(new Männchen(Math.random() * canvas.width, randomY)); //
+      // Spawne bis zu MAX_CHARACTERS basierend auf den anfänglich bekannten Chat-Usern
+      // Jeder Charakter, der hier gespawnt wird, bekommt einen zufälligen Namen aus chatUsers
+      const numToSpawn = Math.min(chatUsers.size, MAX_CHARACTERS);
+      for (let i = 0; i < numToSpawn; i++) {
+        const randomY = Math.random() * (groundMaxY - groundMinY) + groundMinY;
+        const newChar = new Männchen(Math.random() * canvas.width, randomY);
+        // assignRandomName wird im Konstruktor bereits aufgerufen, aber wir wollen sicherstellen,
+        // dass der Name auch zu den activeMaleNames hinzugefügt wird, falls es ein echter Chat-User ist.
+        if (newChar.name && newChar.name !== 'Unbekannt') {
+          activeMaleNames.add(newChar.name);
         }
-        console.log(`Es wurden ${numToSpawn} Charaktere gespawnt.`); //
+        männchenListe.push(newChar);
       }
+      console.log(`Initial wurden ${numToSpawn} Charaktere gespawnt.`);
 
-      animate(); // Starte die Animation nur, wenn die Initialisierung abgeschlossen ist
     }).catch(console.error);
   });
 }
@@ -264,33 +302,37 @@ function handleCollision(a, b) {
     // Vorbeilaufen - nichts Besonderes zu tun
   } else if (r < 0.66) {
     // Töten
-    const victim = Math.random() < 0.5 ? a : b; //
-    const killer = (victim === a) ? b : a; //
+    const victim = Math.random() < 0.5 ? a : b;
+    const killer = (victim === a) ? b : a;
 
     victim.state = 'dying'; // Opfer geht in den "dying"-Zustand
-    victim.animationTimer = Date.now(); //
+    victim.animationTimer = Date.now();
 
     // Setze den Killer für einen kurzen Moment auf "loving", damit er nicht sofort wieder kollidiert
-    killer.state = 'loving'; //
-    setTimeout(() => { //
+    killer.state = 'loving';
+    setTimeout(() => {
       if (killer.state === 'loving') { // Sicherstellen, dass er nicht schon wieder in einer anderen Kollision ist
-        killer.state = 'alive'; //
+        killer.state = 'alive';
       }
     }, 1000); // 1 Sekunde Pause
 
     // Wolke und dann Geist
-    setTimeout(() => { //
+    setTimeout(() => {
       victim.state = 'ghost'; // Wird zu Geist
     }, 500); // Nach 0.5 Sekunden (Wolke sollte kurz sichtbar sein)
 
     // Geist verschwindet, Grabstein erscheint
-    setTimeout(() => { //
+    setTimeout(() => {
       victim.state = 'gravestone'; // Wird zu Grabstein
     }, 2000); // Geist steigt ca. 1.5 Sekunden
 
     // Grabstein verschwindet und Figur wird entfernt
-    setTimeout(() => { //
-      männchenListe = männchenListe.filter(m => m !== victim); //
+    setTimeout(() => {
+      männchenListe = männchenListe.filter(m => m !== victim);
+      // Entferne den Namen auch aus activeMaleNames, wenn es ein benanntes Männchen war
+      if (victim.name && activeMaleNames.has(victim.name)) {
+        activeMaleNames.delete(victim.name);
+      }
     }, 3000); // Grabstein bleibt für 1 Sekunde (2s bis 3s)
 
   } else {
@@ -301,7 +343,7 @@ function handleCollision(a, b) {
     b.animationTimer = Date.now();
 
     // Herzen erscheinen für BABY_CREATION_DURATION (5 Sekunden)
-    setTimeout(() => { //
+    setTimeout(() => {
       // Setze Figuren wieder auf "alive"
       if (a.state === 'loving') a.state = 'alive';
       if (b.state === 'loving') b.state = 'alive';
@@ -309,7 +351,11 @@ function handleCollision(a, b) {
       // Einer der beteiligten Eltern stirbt (ohne Animation)
       const dyingParent = Math.random() < 0.5 ? a : b;
       männchenListe = männchenListe.filter(m => m !== dyingParent);
-      console.log(`Einer der Eltern (${dyingParent.name}) ist nach Baby-Geburt gestorben.`);
+      // Entferne den Namen des sterbenden Elternteils aus activeMaleNames
+      if (dyingParent.name && activeMaleNames.has(dyingParent.name)) {
+        activeMaleNames.delete(dyingParent.name);
+      }
+      console.log(`Einer der Eltern (${dyingParent.name || 'Unbekannt'}) ist nach Baby-Geburt gestorben.`);
 
       // Baby erzeugen
       const babyX = (a.x + b.x) / 2;
@@ -319,10 +365,11 @@ function handleCollision(a, b) {
       // Alle drei laufen hintereinander her (einfache Implementierung: Geschwindigkeiten anpassen)
       const newSpeed = Math.random() * 0.8 + 0.2; // Etwas langsamer für die Gruppe
       const newDirection = Math.random() < 0.5 ? -1 : 1;
-      a.speed = newSpeed;
-      b.speed = newSpeed;
-      a.direction = newDirection;
-      b.direction = newDirection;
+      // Der überlebende Elternteil
+      const survivingParent = (dyingParent === a) ? b : a;
+      survivingParent.speed = newSpeed;
+      survivingParent.direction = newDirection;
+
 
       // Finden Sie das gerade erstellte Baby und passen Sie seine Geschwindigkeit an
       const newBaby = männchenListe[männchenListe.length - 1];
