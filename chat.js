@@ -20,6 +20,9 @@ let lifespansActive = false;
 // Scoreboard Daten (Name -> { kills: N, babies: M })
 let scoreboard = {};
 
+// NEU: Liste für unbenannte Babys, die auf einen Namen warten
+let unnamedBabies = [];
+
 client.on('chat', (channel, userstate, message, self) => {
   if (self) return; // Ignoriere Nachrichten vom Bot selbst
 
@@ -29,15 +32,19 @@ client.on('chat', (channel, userstate, message, self) => {
   chatUsers.add(displayName);
 
   // === Emoji-Sprechblasen Feature ===
-  // Eine einfache Regex, um 1 oder 2 gängige Emojis zu erkennen.
-  // Achtung: Dies erkennt möglicherweise nicht alle Unicode-Emojis vollständig oder komplexere Sequenzen.
-  const emojiRegex = /^(\u00a9|\u00ae|[\u2000-\u3300]|\ud83c[\ud000-\udfff]|\ud83d[\ud000-\udfff]|\ud83e[\ud000-\udfff]){1,2}$/u;
-  if (message.match(emojiRegex)) {
+  let emotes = [];
+  try {
+    emotes = Object.keys(userstate["emotes"]);
+  } catch {
+    emotes = [];
+  }
+
+  if (emotes.length > 0) {
     const character = männchenListe.find(m => m.name === displayName && m.state === 'alive');
     if (character) {
-      character.currentBubble = message;
+      character.currentBubble = "https://static-cdn.jtvnw.net/emoticons/v2/" + emotes[0] + "/default/light/3.0";
       character.bubbleDisplayUntil = Date.now() + 3000; // Anzeige für 3 Sekunden
-      console.log(`Emoji '${message}' angezeigt für ${displayName}.`);
+      console.log(`Emoji '${emotes[0]}' angezeigt für ${displayName}.`);
     }
     // Wenn es nur eine Emoji-Nachricht ist, nicht versuchen, einen neuen Charakter zu spawnen
     return;
@@ -50,10 +57,10 @@ client.on('chat', (channel, userstate, message, self) => {
   if (!activeMaleNames.has(displayName) && männchenListe.length < MAX_CHARACTERS) {
     const randomY = Math.random() * (groundMaxY - groundMinY) + groundMinY;
     // Neue Charaktere spawnen als Erwachsene
-    const newCharacter = new Männchen(Math.random() * canvas.width, randomY, 'adult');
-    newCharacter.name = displayName; // Weise den spezifischen Namen zu
-    activeMaleNames.add(displayName); // Füge den Namen zu den aktiven Namen hinzu
+    // NEU: displayName direkt an den Konstruktor übergeben
+    const newCharacter = new Männchen(Math.random() * canvas.width, randomY, 'adult', displayName);
     männchenListe.push(newCharacter);
+    activeMaleNames.add(displayName); // Füge den Namen zu den aktiven Namen hinzu
     console.log(`Neuer Charakter für ${displayName} gespawnt. Gesamt: ${männchenListe.length}`);
 
     // Wenn die Lebensdauern bereits aktiv sind, starte sie sofort für diesen neuen Charakter
@@ -108,38 +115,31 @@ const MAX_CHARACTERS = 45; // Erhöht auf 45
 const BABY_CREATION_DURATION = 5 * 1000; // Baby-Erstellung dauert 5 Sekunden
 const TEEN_INTERACTION_DURATION = 3 * 1000; // Teenager-Interaktion dauert 3 Sekunden
 
-// === Hilfsfunktion für zufälligen Namen (Punkt 5) ===
-function assignRandomName(männchen) {
-  const availableNames = Array.from(chatUsers).filter(name => !activeMaleNames.has(name));
+// NEU: Hilfsfunktion für zufälligen, verfügbaren Namen
+function getAvailableName() {
+  const chatUserNames = Array.from(chatUsers);
+  // Filtert Namen, die nicht bereits von einem aktiven Charakter verwendet werden
+  const availableNames = chatUserNames.filter(name => !activeMaleNames.has(name));
   if (availableNames.length > 0) {
-    const name = availableNames[Math.floor(Math.random() * availableNames.length)];
-    männchen.name = name;
-    activeMaleNames.add(name); // Füge den Namen zu den aktiven Namen hinzu, sobald er zugewiesen wurde
-  } else {
-    männchen.name = null; // Setze den Namen auf null, wenn keine Namen verfügbar sind
-    console.log("Keine freien Namen verfügbar. Charakter wird ohne Namen gespawnt.");
+    return availableNames[Math.floor(Math.random() * availableNames.length)];
   }
+  return null; // Kein verfügbarer Name
 }
 
-// === Funktion zur Zuweisung von Namen an unbenannte Babys (Punkt 5) ===
-function assignNamesToUnnamedBabies() {
-  const unnamedBabies = männchenListe.filter(m => m.stage === 'baby' && m.name === null);
-  if (unnamedBabies.length > 0) {
-    const availableNames = Array.from(chatUsers).filter(name => !activeMaleNames.has(name));
-    for (let i = 0; i < unnamedBabies.length && availableNames.length > 0; i++) {
-      const name = availableNames.shift(); // Nimm einen verfügbaren Namen
-      unnamedBabies[i].name = name;
-      activeMaleNames.add(name);
-      console.log(`Name '${name}' einem Baby zugewiesen.`);
-    }
-    updateScoreboardDisplay(); // Scoreboard aktualisieren, da Namen hinzugefügt wurden
+// NEU: Funktion zur Namensfreigabe und Zuweisung an unbenanntes Baby
+function releaseNameAndAssignToBaby(freedName) {
+  // Nur Namen freigeben, die tatsächlich in chatUsers sind
+  if (chatUsers.has(freedName) && unnamedBabies.length > 0) {
+    const babyToName = unnamedBabies.shift(); // Nimm das erste unbenannte Baby
+    babyToName.name = freedName; // Weise den freigewordenen Namen zu
+    activeMaleNames.add(freedName); // Füge den Namen zu den aktiven Namen für das Baby hinzu
+    console.log(`Zuvor unbenanntes Baby wurde zu ${babyToName.name} benannt.`);
   }
 }
-
 
 // === Männchen-Klasse ===
 class Männchen {
-  constructor(x, y, initialStage = 'adult') {
+  constructor(x, y, initialStage = 'adult', assignedName = null) { // NEU: assignedName Parameter
     this.x = x;
     this.y = y;
     this.width = 40;
@@ -171,11 +171,22 @@ class Männchen {
     this.currentBubble = null;
     this.bubbleDisplayUntil = 0;
 
-    // Nur Namen zuweisen, wenn es nicht ein über Twitch gespawntes Männchen ist
-    if (!this.name && initialStage === 'baby') { // Nur Babys initial ohne Namen spawnen
-      assignRandomName(this);
+    // NEU: Namenszuweisung-Logik im Konstruktor
+    this.name = assignedName; // Name direkt zuweisen, wenn übergeben (z.B. vom Chat-User)
+
+    if (!this.name && initialStage !== 'baby') { // Nur versuchen, einen zufälligen Namen zuzuweisen, wenn nicht bereits benannt und kein Baby
+      const availableName = getAvailableName();
+      if (availableName) {
+        this.name = availableName;
+        activeMaleNames.add(availableName);
+      } else {
+        this.name = null; // Bleibt vorerst unbenannt
+      }
+    } else if (initialStage === 'baby' && !this.name) { // Wenn es ein Baby ist und keinen Namen hat
+      unnamedBabies.push(this); // Zum Array der unbenannten Babys hinzufügen
+      console.log("Baby gespawnt ohne Namen. Warte auf freien Namen.");
     }
-    // Charaktere, die durch Chat-Nachricht spawnen, bekommen ihren Namen direkt im client.on('chat') zugewiesen.
+
 
     // Starte die Progression sofort, wenn Lebensdauern aktiv sind oder es ein Baby ist
     if (this.stage === 'baby' || (this.stage === 'adult' && lifespansActive)) {
@@ -198,7 +209,7 @@ class Männchen {
       this.lifespanTimers.teen = setTimeout(() => {
         if (this.stage === 'baby') { // Stelle sicher, dass es noch ein Baby ist
           this.stage = 'teen';
-          console.log(`${this.name || 'Ein Baby'} ist jetzt jugendlich.`); // Für unbenannte Babys
+          console.log(`${this.name || 'Ein unbenanntes Baby'} ist jetzt jugendlich.`); // NEU: Anpassung für unbenannte Babys
           this.startStageProgression(); // Gehe zur nächsten Stufe über
         }
       }, BABY_TO_TEEN_TIME);
@@ -206,7 +217,7 @@ class Männchen {
       this.lifespanTimers.adult = setTimeout(() => {
         if (this.stage === 'teen') { // Stelle sicher, dass es noch ein Teenager ist
           this.stage = 'adult';
-          console.log(`${this.name || 'Ein Jugendlicher'} ist jetzt erwachsen.`); // Für unbenannte
+          console.log(`${this.name} ist jetzt erwachsen.`);
           this.startStageProgression(); // Gehe zur nächsten Stufe über
         }
       }, this.teenToAdultDelay); // Nutze einstellbare Verzögerung
@@ -220,10 +231,12 @@ class Männchen {
           setTimeout(() => this.state = 'gravestone', 2000);
           setTimeout(() => {
             männchenListe = männchenListe.filter(m => m !== this);
+            // NEU: Namen freigeben und versuchen, einem unbenannten Baby zuzuweisen
             if (this.name && activeMaleNames.has(this.name)) {
               activeMaleNames.delete(this.name);
+              releaseNameAndAssignToBaby(this.name);
             }
-            console.log(`${this.name || 'Ein Charakter'} ist gestorben (Ende der Lebensspanne).`); // Für unbenannte
+            console.log(`${this.name || 'Ein Charakter'} ist gestorben (Ende der Lebensspanne).`); // NEU: Anpassung für unbenannte Charaktere
             updateScoreboardDisplay(); // Scoreboard aktualisieren, wenn Charakter entfernt wird
           }, 3000);
         }
@@ -231,12 +244,10 @@ class Männchen {
     }
   }
 
-  // === Punkt 1: Charaktere sollen bei Interaktion stehen bleiben ===
   move() {
-    // Nur bewegen, wenn 'alive' und nicht in einem interaktiven Zustand
-    if (this.state === 'alive') {
+    // NEU: Nur bewegen, wenn lebendig oder in Interaktionszuständen
+    if (this.state === 'alive' || this.state === 'loving' || this.state.startsWith('playing_')) {
       this.x += this.speed * this.direction;
-      // boundary checks
       if (this.x < 0) {
         this.x = 0;
         this.direction = 1;
@@ -245,9 +256,8 @@ class Männchen {
         this.direction = -1;
       }
     } else if (this.state === 'ghost') {
-      this.ghostYOffset -= 0.5; // Geist steigt weiterhin
+      this.ghostYOffset -= 0.5; // Steigt in den Himmel
     }
-    // Für 'dying', 'gravestone', 'loving', 'playing_soccer', 'dancing', 'gaming' erfolgt keine x-Bewegung.
   }
 
   draw() {
@@ -276,8 +286,8 @@ class Männchen {
 
     ctx.restore(); // Canvas-Zustand wiederherstellen
 
-    // Namen zeichnen (nicht für Geister/Grabsteine und nur, wenn Name existiert)
-    if (this.name && this.state !== 'ghost' && this.state !== 'gravestone') {
+    // Namen zeichnen (nicht für Geister/Grabsteine und nur, wenn der Name existiert)
+    if (this.name && this.state !== 'ghost' && this.state !== 'gravestone') { // NEU: this.name prüfen
       ctx.fillStyle = (this.stage === 'baby' || this.stage === 'teen') ? 'lightgreen' : 'white'; // Farbe für Baby/Teen Namen
       ctx.font = (this.stage === 'baby' || this.stage === 'teen') ? '10px Arial' : '12px Arial';
 
@@ -297,9 +307,8 @@ class Männchen {
     if (this.currentBubble && Date.now() < this.bubbleDisplayUntil) {
       const bubblePadding = 5;
       ctx.fillStyle = 'rgba(0, 0, 0, 0.7)'; // Semi-transparenter schwarzer Hintergrund
-      const textWidth = ctx.measureText(this.currentBubble).width;
-      const bubbleWidth = textWidth + (2 * bubblePadding);
-      const bubbleHeight = 20 + (2 * bubblePadding); // ca. Texthöhe + Padding
+      const bubbleWidth = 32 + (2 * bubblePadding);
+      const bubbleHeight = 32 + (2 * bubblePadding); // ca. Texthöhe + Padding
       const bubbleX = this.x + (this.width / 2) - (bubbleWidth / 2);
       const bubbleY = this.y - this.height - 25; // Über dem Charakter
 
@@ -315,7 +324,9 @@ class Männchen {
 
       ctx.fillStyle = 'white'; // Emoji-Farbe
       ctx.font = '16px Arial Unicode MS'; // Font, der Emojis unterstützt
-      ctx.fillText(this.currentBubble, bubbleX + bubblePadding, bubbleY + bubblePadding + 14);
+      let emoteImage = new Image;
+      emoteImage.src = this.currentBubble;
+      ctx.drawImage(emoteImage, bubbleX + bubblePadding, bubbleY + bubblePadding, 32, 32)
     }
     // === Ende Emoji/Interaktions-Sprechblase ===
 
@@ -441,22 +452,17 @@ async function init() {
     danceImg.src = images.dance.src;
     gameImg.src = images.game.src;
 
-    // === Punkt 6: Scoreboard aus localStorage laden ===
-    const savedScoreboard = localStorage.getItem('scoreboard');
-    if (savedScoreboard) {
-      try {
-        scoreboard = JSON.parse(savedScoreboard);
-        console.log("Scoreboard aus localStorage geladen.");
-      } catch (e) {
-        console.error("Fehler beim Laden des Scoreboards aus localStorage:", e);
-        scoreboard = {}; // Setze zurück, wenn Daten korrupt sind
-      }
-    } else {
-      scoreboard = {}; // Initialisiere, wenn nichts gespeichert ist
-    }
 
     // Starte die Animation nur, wenn die Initialisierung abgeschlossen ist
     animate();
+
+    // NEU: Lade Scoreboard-Daten aus localStorage
+    const savedScoreboard = localStorage.getItem('characterScoreboard');
+    if (savedScoreboard) {
+      scoreboard = JSON.parse(savedScoreboard);
+    } else {
+      scoreboard = {}; // Initialisiere, wenn nichts gefunden wird
+    }
 
     // Initiales Spawning der Charaktere basierend auf den anfänglich bekannten Chat-Usern
     client.connect().then(() => {
@@ -466,16 +472,23 @@ async function init() {
       const numToSpawn = Math.min(chatUsers.size, MAX_CHARACTERS);
       for (let i = 0; i < numToSpawn; i++) {
         const randomY = Math.random() * (groundMaxY - groundMinY) + groundMinY;
-        const newChar = new Männchen(Math.random() * canvas.width, randomY, 'adult'); // Start als Erwachsener
-        if (newChar.name && newChar.name !== 'Unbekannt') {
-          activeMaleNames.add(newChar.name);
+        // NEU: `getAvailableName()` verwenden, um Namen von Anfang an zuzuweisen
+        const assignedName = getAvailableName();
+        if (assignedName) {
+          const newChar = new Männchen(Math.random() * canvas.width, randomY, 'adult', assignedName);
+          männchenListe.push(newChar);
+          // activeMaleNames.add(assignedName); // Wird bereits im Männchen-Konstruktor hinzugefügt
+        } else {
+          // Wenn keine Namen verfügbar sind, können sie unbenannt spawnen (nicht im Scope dieser Schleife, da sie für chatUsers sind)
+          // oder man verzichtet darauf, weitere zu spawnen, wenn keine Namen mehr von chatUsers verfügbar sind
+          console.log("Keine verfügbaren Namen für initialen Spawn.");
         }
-        männchenListe.push(newChar);
         if (lifespansActive) { // Starte die Lebensspanne, wenn aktiv
-          newChar.startStageProgression();
+          männchenListe[männchenListe.length - 1].startStageProgression(); // Starte Progression für den zuletzt hinzugefügten
         }
       }
-      console.log(`Initial wurden ${numToSpawn} Charaktere gespawnt.`);
+      console.log(`Initial wurden ${männchenListe.length} Charaktere gespawnt.`);
+
 
       // Prüfen, ob die Lebensdauern direkt nach dem initialen Spawnen beginnen sollen
       if (männchenListe.length >= 20 && !lifespansActive) {
@@ -493,15 +506,13 @@ async function init() {
 
     // Scoreboard alle 5 Sekunden aktualisieren
     setInterval(updateScoreboardDisplay, 5000);
-    // === Punkt 5: Unbenannte Babys regelmäßig mit Namen versorgen ===
-    setInterval(assignNamesToUnnamedBabies, 2000); // Alle 2 Sekunden prüfen
   });
 }
 
 // === Kollisionsprüfung ===
 function checkCollision(a, b) {
   if (a === b || Date.now() < a.interactionCooldownUntil || Date.now() < b.interactionCooldownUntil) {
-    return false; // Keine Selbstkollision oder wenn im Cooldown (Punkt 3)
+    return false; // Keine Selbstkollision oder wenn im Cooldown
   }
 
   // Prüfe, ob eine Kollision tatsächlich visuell stattfindet
@@ -514,13 +525,12 @@ function checkCollision(a, b) {
     return false;
   }
 
-  // === Punkt 4: Jugendliche interagieren nur mit Jugendlichen ===
+  // Jugendliche interagieren nur mit Jugendlichen
   if (a.stage === 'teen' && b.stage === 'teen') {
     // Wenn sie bereits in einem Interaktionszustand sind, ignorieren
     if (a.state.startsWith('playing_') || b.state.startsWith('playing_')) {
       return false;
     }
-    // console.log(`Teens ${a.name} und ${b.name} kollidieren - Interaktion möglich.`); // Debug-Log
     return true; // Jugendliche können miteinander interagieren
   }
 
@@ -543,9 +553,9 @@ function handleCollision(a, b) {
 
   const r = Math.random();
 
-  // === Behandlung von Teenager-Teenager-Interaktionen (Punkt 4) ===
+  // === Behandlung von Teenager-Teenager-Interaktionen ===
   if (a.stage === 'teen' && b.stage === 'teen') {
-    // Cooldown anwenden, um schnelle aufeinanderfolgende Interaktionen zu verhindern (Punkt 3)
+    // Cooldown anwenden, um schnelle aufeinanderfolgende Interaktionen zu verhindern
     a.interactionCooldownUntil = Date.now() + (5 * 1000); // 5 Sek. Cooldown für jede Interaktion
     b.interactionCooldownUntil = Date.now() + (5 * 1000);
 
@@ -566,11 +576,11 @@ function handleCollision(a, b) {
     b.state = `playing_${interactionType}`; // Beide zeigen Interaktions-Icon
     a.animationTimer = Date.now();
     b.animationTimer = Date.now();
-    // console.log(`Teenager-Interaktion: ${a.name} und ${b.name} starten ${interactionType}.`); // Debug-Log
+
+    console.log(`${a.name} und ${b.name} sind in einem ${interactionType}-Kampf! ${winner.name} hat gewonnen.`);
 
     // Dauer der Interaktionsanimation
     setTimeout(() => {
-      // Setze den Zustand nach der Interaktion zurück
       if (a.state.startsWith('playing_')) a.state = 'alive';
       if (b.state.startsWith('playing_')) b.state = 'alive';
 
@@ -580,18 +590,18 @@ function handleCollision(a, b) {
         loser.teenToAdultDelay = TEEN_TO_ADULT_TIME; // Reset bei Rückkehr zum Baby
         loser.adultLifespanRemaining = ADULT_LIFESPAN; // Reset
         loser.startStageProgression(); // Lebenszyklus für Verlierer neu starten
-        console.log(`${loser.name || 'Ein Jugendlicher'} hat beim Fußball verloren und wird wieder zum Baby.`);
+        console.log(`${loser.name} hat beim Fußball verloren und wird wieder zum Baby.`);
       } else if (interactionType === 'dance') {
         // Verlierer braucht 1min. länger, um Erwachsen zu werden
         loser.teenToAdultDelay += 60 * 1000; // 1 Min. zur Teenager-zu-Erwachsenen-Zeit hinzufügen
         loser.startStageProgression(); // Stufen neu berechnen (Timeout wird neu gesetzt)
-        console.log(`${loser.name || 'Ein Jugendlicher'} hat beim Dance Battle verloren und braucht 1 Min. länger.`);
+        console.log(`${loser.name} hat beim Dance Battle verloren und braucht 1 Min. länger.`);
       } else if (interactionType === 'game') {
         // Verlierer wird sofort erwachsen und lebt noch 40 Sek.
         loser.stage = 'adult';
         loser.adultLifespanRemaining = 40 * 1000; // Verbleibende Lebensspanne als Erwachsener setzen
         loser.startStageProgression(); // Stufen neu berechnen (Timeout wird neu gesetzt)
-        console.log(`${loser.name || 'Ein Jugendlicher'} hat beim Game Battle verloren, wird sofort erwachsen und lebt noch 40s.`);
+        console.log(`${loser.name} hat beim Game Battle verloren, wird sofort erwachsen und lebt noch 40s.`);
       }
 
       // Figuren in verschiedene Richtungen bewegen, um sofortige erneute Kollision zu vermeiden
@@ -633,7 +643,6 @@ function handleCollision(a, b) {
           babies: 0
         };
       }
-      localStorage.setItem('scoreboard', JSON.stringify(scoreboard)); // Punkt 6: Scoreboard speichern
       updateScoreboardDisplay(); // Scoreboard HTML aktualisieren
 
       victim.state = 'dying';
@@ -644,16 +653,14 @@ function handleCollision(a, b) {
         if (killer.state === 'loving') killer.state = 'alive'; // Zurück zu 'alive' (Erwachsen)
       }, 1000);
 
-      // Cooldown nach Interaktion (Punkt 3)
-      killer.interactionCooldownUntil = Date.now() + (5 * 1000); // 5 Sekunden
-      victim.interactionCooldownUntil = Date.now() + (5 * 1000); // 5 Sekunden
-
       setTimeout(() => victim.state = 'ghost', 500);
       setTimeout(() => victim.state = 'gravestone', 2000);
       setTimeout(() => {
         männchenListe = männchenListe.filter(m => m !== victim);
+        // NEU: Namen freigeben und versuchen, einem unbenannten Baby zuzuweisen
         if (victim.name && activeMaleNames.has(victim.name)) {
           activeMaleNames.delete(victim.name);
+          releaseNameAndAssignToBaby(victim.name);
         }
         updateScoreboardDisplay(); // Scoreboard HTML aktualisieren, wenn Charakter entfernt wird
       }, 3000);
@@ -665,13 +672,10 @@ function handleCollision(a, b) {
       b.animationTimer = Date.now();
 
       const now = Date.now();
-      // Baby-Erstellungs-Cooldown (Punkt 3)
-      a.babyCooldownUntil = now + (15 * 1000); // 15 Sekunden
-      b.babyCooldownUntil = now + (15 * 1000); // 15 Sekunden
-      // Allgemeine Interaktions-Cooldown (Punkt 3)
-      a.interactionCooldownUntil = now + (5 * 1000); // 5 Sekunden
-      b.interactionCooldownUntil = now + (5 * 1000); // 5 Sekunden
-
+      a.babyCooldownUntil = now + (20 * 1000);
+      b.babyCooldownUntil = now + (20 * 1000);
+      a.interactionCooldownUntil = now + (10 * 1000);
+      b.interactionCooldownUntil = now + (10 * 1000);
 
       // Scoreboard für die Baby-Erzeugung aktualisieren
       if (scoreboard[a.name]) {
@@ -690,23 +694,22 @@ function handleCollision(a, b) {
           babies: 1
         };
       }
-      localStorage.setItem('scoreboard', JSON.stringify(scoreboard)); // Punkt 6: Scoreboard speichern
       updateScoreboardDisplay(); // Scoreboard HTML aktualisieren
 
       setTimeout(() => {
         if (a.state === 'loving') a.state = 'alive'; // Zurück zu 'alive' (Erwachsen)
         if (b.state === 'loving') b.state = 'alive';
 
-        console.log(`Baby von ${a.name} und ${b.name} erstellt.`);
-
         const babyX = (a.x + b.x) / 2;
         const randomY = Math.random() * (groundMaxY - groundMinY) + groundMinY;
-        const newBaby = new Männchen(babyX, randomY, 'baby'); // Baby als initialStage übergeben
-        assignRandomName(newBaby); // Punkt 5: Namen zuweisen, kann null sein
+        // NEU: Dem Männchen-Konstruktor die Namenszuweisung für Babys überlassen
+        const newBaby = new Männchen(babyX, randomY, 'baby');
         männchenListe.push(newBaby);
         newBaby.startStageProgression(); // Babys Lebenszyklus starten
 
-        // === Punkt 2: Eltern und Baby in zufällige/verschiedene Richtungen gehen ===
+        console.log(`Baby von ${a.name} und ${b.name} erstellt.`);
+
+
         // Elternfiguren in verschiedene Richtungen bewegen, um sofortige erneute Kollisionen zu vermeiden
         if (a.x < b.x) {
           a.direction = -1;
@@ -717,8 +720,6 @@ function handleCollision(a, b) {
         }
         a.speed = Math.random() * 0.5 + 0.5;
         b.speed = Math.random() * 0.5 + 0.5;
-
-        // Baby in zufällige Richtung mit eigener Geschwindigkeit
         newBaby.speed = Math.random() * 0.8 + 0.2;
         newBaby.direction = Math.random() < 0.5 ? -1 : 1;
 
@@ -755,6 +756,9 @@ function updateScoreboardDisplay() {
     li.textContent = `${entry.name}: ${entry.score.toFixed(0)}`; // Score anzeigen
     scoreList.appendChild(li);
   });
+
+  // NEU: Speichere Scoreboard-Daten in localStorage nach jeder Aktualisierung
+  localStorage.setItem('characterScoreboard', JSON.stringify(scoreboard));
 }
 
 // === Animationsschleife ===
