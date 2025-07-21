@@ -1,6 +1,19 @@
 // === Twitch Verbindung ===
-siteURL = new URL(window.location);
-TwitchChannel = siteURL.searchParams.get("channel").toLowerCase().split(",");
+let siteURL = new URL(window.location);
+let TwitchChannel;
+
+const channelParam = siteURL.searchParams.get("channel");
+if (channelParam) {
+  TwitchChannel = channelParam.toLowerCase().split(",");
+} else {
+  // If no channel is provided, log an error and use a fallback.
+  // This prevents the "Cannot read properties of null (reading 'toLowerCase')" error.
+  console.error("No 'channel' parameter found in URL. Please add ?channel=yourchannel to the URL for live chat.");
+  // Fallback to a default channel or inform the user that live chat won't work without a channel.
+  // For production, you might want to stop further execution or provide a visual error.
+  TwitchChannel = ['yourdefaultchannel']; // Replace with a sensible default if you want it to run without a channel
+}
+
 // === Verbindung erstellen ===
 const client = new tmi.Client({
   options: {
@@ -20,7 +33,7 @@ let lifespansActive = false;
 // Scoreboard Daten (Name -> { kills: N, babies: M })
 let scoreboard = {};
 
-// NEU: Liste für Charaktere, die auf einen Namen von chatUsers warten
+// Liste für Charaktere, die auf einen Namen von chatUsers warten
 let unnamedCharactersWaitingForChatName = [];
 
 // === Konstanten für Lebensdauern und Spawning ===
@@ -30,13 +43,14 @@ const ADULT_LIFESPAN = 60 * 1000; // 1 Minute als Erwachsener
 const MAX_CHARACTERS = 45; // Erhöht auf 45
 const BABY_CREATION_DURATION = 5 * 1000; // Baby-Erstellung dauert 5 Sekunden
 const TEEN_INTERACTION_DURATION = 3 * 1000; // Teenager-Interaktion dauert 3 Sekunden
-const MAX_BABIES = 15; // NEU: Maximal 15 Babys gleichzeitig
+const MAX_BABIES = 15; // Maximal 15 Babys gleichzeitig
+const MAX_LOG_ENTRIES = 10; // Maximale Anzahl der Einträge im Aktions-Logbuch
 
-// Globale Deklarationen für Canvas und Kontext
+// === Globale Deklaration der Canvas-Variablen (damit sie im gesamten Skript zugänglich sind) ===
 let canvas;
 let ctx;
 
-// Bilder global deklarieren
+// === Globale Deklaration der Bildvariablen ===
 let groundImg = new Image();
 let characterImg = new Image();
 let babyImg = new Image();
@@ -49,11 +63,12 @@ let heartImg = new Image();
 let soccerImg = new Image();
 let danceImg = new Image();
 let gameImg = new Image();
-let pokerImg = new Image(); // NEU: Poker Bild
+let pokerImg = new Image();
+
 
 // === Hilfsfunktionen ===
 
-// NEU: Funktion zur Generierung einer zufälligen Farbe
+// Funktion zur Generierung einer zufälligen Farbe
 function getRandomColor() {
   const letters = '0123456789ABCDEF';
   let color = '#';
@@ -63,7 +78,7 @@ function getRandomColor() {
   return color;
 }
 
-// NEU: Funktion zur Extraktion der ersten Silbe (vereinfacht)
+// Funktion zur Extraktion der ersten Silbe (vereinfacht)
 function getFirstSyllable(name) {
   if (!name) return "";
   let parts = name.split(/[\s-]/); // Trennen nach Leerzeichen oder Bindestrich
@@ -73,7 +88,7 @@ function getFirstSyllable(name) {
   return firstPart.substring(0, 2 + Math.floor(Math.random() * 2)); // 2 oder 3 Zeichen
 }
 
-// NEU: Hilfsfunktion für zufälligen, verfügbaren Namen von chatUsers
+// Hilfsfunktion für zufälligen, verfügbaren Namen von chatUsers
 function getAvailableName() {
   const chatUserNames = Array.from(chatUsers);
   // Filtert Namen, die nicht bereits von einem aktiven Charakter (mit chatUsers-Namen) verwendet werden
@@ -84,17 +99,35 @@ function getAvailableName() {
   return null; // Kein verfügbarer Name
 }
 
-// NEU: Funktion zur Namensfreigabe und Zuweisung an wartende Charaktere
+// Funktion zur Namensfreigabe und Zuweisung an wartende Charaktere
 function releaseNameAndAssignToWaitingCharacter(freedName) {
   // Nur Namen freigeben, die tatsächlich von chatUsers stammen
   if (chatUsers.has(freedName) && unnamedCharactersWaitingForChatName.length > 0) {
     const charToName = unnamedCharactersWaitingForChatName.shift(); // Nimm den ersten wartenden Charakter
     charToName.name = freedName; // Weise den freigewordenen Namen zu
     activeMaleNames.add(freedName); // Füge den Namen zu den aktiven Namen für den Charakter hinzu
-    charToName.nameColor = getRandomColor(); // NEU: Zufällige Farbe für den neu benannten Charakter
+    charToName.nameColor = getRandomColor(); // Zufällige Farbe für den neu benannten Charakter
     console.log(`Zuvor unbenannter Charakter wurde zu ${charToName.name} benannt.`);
   }
 }
+
+// NEU: Funktion zum Hinzufügen von Einträgen zum Aktions-Logbuch
+function addToActionLog(message) {
+    const actionLog = document.getElementById('action-log');
+    if (!actionLog) return;
+
+    const li = document.createElement('li');
+    li.textContent = message;
+
+    // Füge den neuen Eintrag am Anfang der Liste ein
+    actionLog.prepend(li);
+
+    // Begrenze die Anzahl der Einträge
+    while (actionLog.children.length > MAX_LOG_ENTRIES) {
+        actionLog.removeChild(actionLog.lastChild);
+    }
+}
+
 
 // === Männchen-Klasse ===
 class Männchen {
@@ -103,7 +136,8 @@ class Männchen {
     this.y = y;
     this.width = 40;
     this.height = 40;
-    this.speed = Math.random() * 1.0 + 0.2;
+    // Angepasste Geschwindigkeit: langsamer
+    this.speed = Math.random() * 0.6 + 0.1; // Range 0.1 to 0.7 (slightly faster max speed)
     this.direction = Math.random() < 0.5 ? -1 : 1;
 
     this.stage = initialStage;
@@ -114,7 +148,7 @@ class Männchen {
 
     this.babyCooldownUntil = 0;
     this.interactionCooldownUntil = 0;
-    this.canHaveBabies = true; // NEU: Flag für Poker-Verlierer
+    this.canHaveBabies = true; // Flag für Poker-Verlierer
 
     this.lifespanTimers = {
       teen: null,
@@ -127,7 +161,7 @@ class Männchen {
     this.currentBubble = null;
     this.bubbleDisplayUntil = 0;
 
-    // NEU: Namenszuweisung und Farb-Logik im Konstruktor
+    // Namenszuweisung und Farb-Logik im Konstruktor
     this.name = assignedName; // Name direkt zuweisen, wenn übergeben (z.B. vom Chat-User oder Baby-Kombination)
 
     if (this.stage === 'baby') {
@@ -138,7 +172,7 @@ class Männchen {
       if (chatUsers.has(this.name) && !activeMaleNames.has(this.name)) {
         activeMaleNames.add(this.name);
       }
-    } else { // Wenn kein Name zugewiesen wurde (z.B. initialer Spawn und kein Name verfügbar)
+    } else { // Wenn kein Name zugewiesen wurde (z.g. initialer Spawn und kein Name verfügbar)
       const availableName = getAvailableName();
       if (availableName) {
         this.name = availableName;
@@ -168,7 +202,7 @@ class Männchen {
       this.lifespanTimers.teen = setTimeout(() => {
         if (this.stage === 'baby') {
           this.stage = 'teen';
-          this.nameColor = getRandomColor(); // NEU: Zufällige Farbe für Teenager
+          this.nameColor = getRandomColor(); // Zufällige Farbe für Teenager
           console.log(`${this.name || 'Ein unbenanntes Baby'} ist jetzt jugendlich.`);
           this.startStageProgression();
         }
@@ -177,20 +211,15 @@ class Männchen {
       this.lifespanTimers.adult = setTimeout(() => {
         if (this.stage === 'teen') {
           this.stage = 'adult';
-          this.nameColor = getRandomColor(); // NEU: Zufällige Farbe für Erwachsene
+          this.nameColor = getRandomColor(); // Zufällige Farbe für Erwachsene
 
-          // NEU: Namenswechsel für Erwachsene
+          // Namenswechsel für Erwachsene
           const newAdultChatName = getAvailableName();
           if (newAdultChatName) {
-            // Wenn der Charakter zuvor einen Composite-Namen hatte, ist dieser nicht in activeMaleNames,
-            // daher muss er nicht entfernt werden.
             this.name = newAdultChatName;
             activeMaleNames.add(newAdultChatName);
-            // Falls der Charakter zuvor in unnamedCharactersWaitingForChatName war,
-            // sollte er von dort entfernt werden, aber das wird durch releaseNameAndAssignToWaitingCharacter gehandhabt.
             console.log(`${this.name} ist jetzt erwachsen und heißt ${newAdultChatName}.`);
           } else {
-            // Wenn kein chatUser-Name verfügbar ist, bleibt er vorerst unbenannt oder behält den Teenager-Namen
             this.name = this.name || "Unbenannter Erwachsener"; // Behalte Teenager-Namen oder "Unbenannter Erwachsener"
             unnamedCharactersWaitingForChatName.push(this); // Zur Warteliste hinzufügen
             console.log(`${this.name} ist jetzt erwachsen, aber es war kein neuer Chat-Name verfügbar.`);
@@ -210,11 +239,12 @@ class Männchen {
             // Wenn der Charakter einen Namen von activeMaleNames hatte, freigeben
             if (this.name && activeMaleNames.has(this.name)) {
               activeMaleNames.delete(this.name);
-              releaseNameAndAssignToWaitingCharacter(this.name); // NEU: Namen an wartende Charaktere geben
+              releaseNameAndAssignToWaitingCharacter(this.name);
+              // NEU: Log-Eintrag für den Tod
+              addToActionLog(`${this.name} ist gestorben.`);
             }
             // Auch aus der Warteliste entfernen, falls es dort war (z.B. unbenannter Erwachsener)
             unnamedCharactersWaitingForChatName = unnamedCharactersWaitingForChatName.filter(m => m !== this);
-            console.log(`${this.name || 'Ein Charakter'} ist gestorben (Ende der Lebensspanne).`);
             updateScoreboardDisplay();
           }, 3000);
         }
@@ -223,7 +253,8 @@ class Männchen {
   }
 
   move() {
-    if (this.state === 'alive' || this.state === 'loving' || this.state.startsWith('playing_')) {
+    // Charaktere bewegen sich nur, wenn sie im Zustand 'alive' sind
+    if (this.state === 'alive') {
       this.x += this.speed * this.direction;
       if (this.x < 0) {
         this.x = 0;
@@ -263,7 +294,7 @@ class Männchen {
 
     // Namen zeichnen (nicht für Geister/Grabsteine und nur, wenn der Name existiert)
     if (this.name && this.state !== 'ghost' && this.state !== 'gravestone') {
-      ctx.fillStyle = this.nameColor; // NEU: Zufällige Namensfarbe
+      ctx.fillStyle = this.nameColor;
       ctx.font = (this.stage === 'baby' || this.stage === 'teen') ? '10px Arial' : '12px Arial';
 
       let textX = this.x;
@@ -362,7 +393,7 @@ class Männchen {
       ctx.scale(scale, scale);
       ctx.drawImage(gameImg, -iconWidth / 2, -iconHeight / 2, iconWidth, iconHeight);
       ctx.restore();
-    } else if (this.state === 'playing_poker') { // NEU: Poker-Animation
+    } else if (this.state === 'playing_poker') {
       const pulseSpeed = 0.005;
       const pulseMagnitude = 0.1;
       const scale = 1 + Math.sin(Date.now() * pulseSpeed) * pulseMagnitude;
@@ -425,7 +456,7 @@ async function init() {
     soccer: 'soccer.png',
     dance: 'dance.png',
     game: 'game.png',
-    poker: 'poker.png' // NEU: Poker Bild
+    poker: 'poker.png'
   };
 
   loadImages(imageSources, function(images) {
@@ -441,7 +472,7 @@ async function init() {
     soccerImg.src = images.soccer.src;
     danceImg.src = images.dance.src;
     gameImg.src = images.game.src;
-    pokerImg.src = images.poker.src; // NEU
+    pokerImg.src = images.poker.src;
 
     animate();
 
@@ -452,40 +483,41 @@ async function init() {
       scoreboard = {};
     }
 
+    // Direct connection to TMI client (simulation mode removed)
     client.connect().then(() => {
       console.log(`🤖 Bot ist verbunden mit ${TwitchChannel}`);
-
-      // Initiales Spawning, um MAX_CHARACTERS aufzufüllen
-      spawnMissingCharacters();
-
-      if (männchenListe.length >= 20 && !lifespansActive) {
-        lifespansActive = true;
-        console.log("20 Charaktere erreicht oder überschritten bei Initialisierung. Lebensdauern starten für alle.");
-        männchenListe.forEach(m => {
-          if (!m.lifespanTimers.death && m.stage !== 'baby') {
-            m.startStageProgression();
-          }
-        });
-      }
-      updateScoreboardDisplay();
-
     }).catch(console.error);
 
+    // Initiales Spawning, um MAX_CHARACTERS aufzufüllen
+    spawnMissingCharacters();
+
+    if (männchenListe.length >= 20 && !lifespansActive) {
+      lifespansActive = true;
+      console.log("20 Charaktere erreicht oder überschritten bei Initialisierung. Lebensdauern starten für alle.");
+      männchenListe.forEach(m => {
+        if (!m.lifespanTimers.death && m.stage !== 'baby') {
+          m.startStageProgression();
+        }
+      });
+    }
+    updateScoreboardDisplay();
+
     setInterval(updateScoreboardDisplay, 5000);
-    setInterval(spawnMissingCharacters, 10000); // NEU: Alle 10 Sekunden prüfen, ob Charaktere fehlen
+    setInterval(spawnMissingCharacters, 10000); // Alle 10 Sekunden prüfen, ob Charaktere fehlen
   });
 }
 
-// NEU: Funktion zum proaktiven Spawnen fehlender Charaktere
+// Funktion zum proaktiven Spawnen fehlender Charaktere
 function spawnMissingCharacters() {
   while (männchenListe.length < MAX_CHARACTERS) {
     const availableName = getAvailableName();
     if (availableName) {
       const randomY = Math.random() * (groundMaxY - groundMinY) + groundMinY;
-      const newChar = new Männchen(Math.random() * canvas.width, randomY, 'adult', availableName);
+      const newChar = new Männchen(Math.random() * canvas.width, randomY, 'adult', availableName); // Name direkt übergeben
       männchenListe.push(newChar);
-      // Der Name wird im Männchen-Konstruktor zu activeMaleNames hinzugefügt
       console.log(`Charakter ${newChar.name} proaktiv gespawnt. Gesamt: ${männchenListe.length}`);
+      // NEU: Log-Eintrag für proaktiven Spawn
+      addToActionLog(`${newChar.name} ist beigetreten.`);
       if (lifespansActive) {
         newChar.startStageProgression();
       }
@@ -524,8 +556,9 @@ client.on('chat', (channel, userstate, message, self) => {
     const randomY = Math.random() * (groundMaxY - groundMinY) + groundMinY;
     const newCharacter = new Männchen(Math.random() * canvas.width, randomY, 'adult', displayName); // Name direkt übergeben
     männchenListe.push(newCharacter);
-    // Der Name wird im Männchen-Konstruktor zu activeMaleNames hinzugefügt
     console.log(`Neuer Charakter für ${displayName} gespawnt. Gesamt: ${männchenListe.length}`);
+    // NEU: Log-Eintrag für neuen User
+    addToActionLog(`${displayName} ist dem Spiel beigetreten.`);
 
     if (lifespansActive) {
       newCharacter.startStageProgression();
@@ -545,6 +578,7 @@ client.on('chat', (channel, userstate, message, self) => {
 
 // === Kollisionsprüfung ===
 function checkCollision(a, b) {
+  // Charaktere im Interaktions-Cooldown können keine neuen Kollisionen auslösen
   if (a === b || Date.now() < a.interactionCooldownUntil || Date.now() < b.interactionCooldownUntil) {
     return false;
   }
@@ -585,8 +619,9 @@ function handleCollision(a, b) {
 
   // === Behandlung von Teenager-Teenager-Interaktionen ===
   if (a.stage === 'teen' && b.stage === 'teen') {
-    a.interactionCooldownUntil = Date.now() + (5 * 1000);
-    b.interactionCooldownUntil = Date.now() + (5 * 1000);
+    // Set 2-second cooldown for any interaction attempt
+    a.interactionCooldownUntil = Date.now() + (2 * 1000);
+    b.interactionCooldownUntil = Date.now() + (2 * 1000);
 
     let interactionType;
     if (r < 0.33) {
@@ -616,16 +651,16 @@ function handleCollision(a, b) {
         loser.teenToAdultDelay = TEEN_TO_ADULT_TIME;
         loser.adultLifespanRemaining = ADULT_LIFESPAN;
         loser.startStageProgression();
-        console.log(`${loser.name} hat beim Fußball verloren und wird wieder zum Baby.`);
+        addToActionLog(`${winner.name} hat gegen ${loser.name} im Fußball gewonnen. ${loser.name} wurde wieder zum Baby.`); // NEU: Log-Eintrag
       } else if (interactionType === 'dance') {
         loser.teenToAdultDelay += 60 * 1000;
         loser.startStageProgression();
-        console.log(`${loser.name} hat beim Dance Battle verloren und braucht 1 Min. länger.`);
+        addToActionLog(`${winner.name} hat gegen ${loser.name} im Tanzkampf gewonnen. ${loser.name} braucht länger zum Erwachsenwerden.`); // NEU: Log-Eintrag
       } else if (interactionType === 'game') {
         loser.stage = 'adult';
         loser.adultLifespanRemaining = 40 * 1000;
         loser.startStageProgression();
-        console.log(`${loser.name} hat beim Game Battle verloren, wird sofort erwachsen und lebt noch 40s.`);
+        addToActionLog(`${winner.name} hat gegen ${loser.name} im Game Battle gewonnen. ${loser.name} wurde sofort erwachsen.`); // NEU: Log-Eintrag
       }
 
       if (a.x < b.x) {
@@ -635,8 +670,9 @@ function handleCollision(a, b) {
         a.direction = 1;
         b.direction = -1;
       }
-      a.speed = Math.random() * 0.5 + 0.5;
-      b.speed = Math.random() * 0.5 + 0.5;
+      // Angepasste Geschwindigkeit nach Interaktion (mit neuem Bereich)
+      a.speed = Math.random() * 0.6 + 0.1;
+      b.speed = Math.random() * 0.6 + 0.1;
 
     }, TEEN_INTERACTION_DURATION);
     return;
@@ -644,14 +680,14 @@ function handleCollision(a, b) {
 
   // === Behandlung von Erwachsenen-Erwachsenen-Interaktionen (Töten/Baby-Erzeugung/Pokern) ===
   if (a.stage === 'adult' && b.stage === 'adult') {
-    // Cooldown für allgemeine Interaktionen setzen
-    a.interactionCooldownUntil = Date.now() + (10 * 1000); // 10 Sek. Cooldown
-    b.interactionCooldownUntil = Date.now() + (10 * 1000);
+    // Set 2-second cooldown for any interaction attempt
+    a.interactionCooldownUntil = Date.now() + (2 * 1000);
+    b.interactionCooldownUntil = Date.now() + (2 * 1000);
 
     const currentBabies = männchenListe.filter(m => m.stage === 'baby').length;
 
     if (r < 0.33) {
-      // Töten
+      // Töten (33% Chance)
       const victim = Math.random() < 0.5 ? a : b;
       const killer = (victim === a) ? b : a;
 
@@ -668,10 +704,13 @@ function handleCollision(a, b) {
       victim.state = 'dying';
       victim.animationTimer = Date.now();
 
-      killer.state = 'loving';
+      killer.state = 'loving'; // Killer shows hearts briefly
       setTimeout(() => {
         if (killer.state === 'loving') killer.state = 'alive';
-      }, 1000);
+      }, 1000); // Heart animation for killer for 1 second
+
+      // NEU: Log-Eintrag für Tötung
+      addToActionLog(`${killer.name} hat ${victim.name} geschlagen.`);
 
       setTimeout(() => victim.state = 'ghost', 500);
       setTimeout(() => victim.state = 'gravestone', 2000);
@@ -679,14 +718,14 @@ function handleCollision(a, b) {
         männchenListe = männchenListe.filter(m => m !== victim);
         if (victim.name && activeMaleNames.has(victim.name)) {
           activeMaleNames.delete(victim.name);
-          releaseNameAndAssignToWaitingCharacter(victim.name); // NEU
+          releaseNameAndAssignToWaitingCharacter(victim.name);
         }
-        unnamedCharactersWaitingForChatName = unnamedCharactersWaitingForChatName.filter(m => m !== victim); // NE falls unbenannt
+        unnamedCharactersWaitingForChatName = unnamedCharactersWaitingForChatName.filter(m => m !== victim);
         updateScoreboardDisplay();
       }, 3000);
-    } else if (r < 0.66) {
-      // Baby erzeugen (Verlieben)
-      // NEU: Prüfung des Baby-Limits und canHaveBabies-Flags
+    } else if (r < 0.99) {
+      // Baby erzeugen (66% Chance)
+      // Prüfung des Baby-Limits und canHaveBabies-Flags
       if (currentBabies >= MAX_BABIES) {
         console.log(`Baby-Erstellung übersprungen: Maximal ${MAX_BABIES} Babys gleichzeitig erlaubt.`);
         return;
@@ -695,12 +734,11 @@ function handleCollision(a, b) {
         console.log(`Baby-Erstellung übersprungen: ${a.name} oder ${b.name} kann keine Babys mehr bekommen.`);
         return;
       }
-      // Baby-Erstellungs-Cooldown für Erwachsene prüfen
+      // Baby-Erstellungs-Cooldown für Erwachsene prüfen (zusätzlich zum allgemeinen Interaktions-Cooldown)
       if (Date.now() < a.babyCooldownUntil || Date.now() < b.babyCooldownUntil) {
         console.log("Baby-Erstellung aufgrund von Cooldown übersprungen.");
         return;
       }
-
 
       a.state = 'loving';
       b.state = 'loving';
@@ -708,8 +746,9 @@ function handleCollision(a, b) {
       b.animationTimer = Date.now();
 
       const now = Date.now();
-      a.babyCooldownUntil = now + (20 * 1000);
-      b.babyCooldownUntil = now + (20 * 1000);
+      // Baby-Cooldown: 5s Interaktion + 15s kein Baby = 20s
+      a.babyCooldownUntil = now + (5 * 1000) + (15 * 1000); // 20 Sekunden
+      b.babyCooldownUntil = now + (5 * 1000) + (15 * 1000); // 20 Sekunden
 
 
       if (scoreboard[a.name]) {
@@ -737,13 +776,15 @@ function handleCollision(a, b) {
         const babyX = (a.x + b.x) / 2;
         const randomY = Math.random() * (groundMaxY - groundMinY) + groundMinY;
 
-        // NEU: Baby-Namen aus Silben der Eltern zusammensetzen
+        // Baby-Namen aus Silben der Eltern zusammensetzen
         const babyGeneratedName = getFirstSyllable(a.name) + getFirstSyllable(b.name);
-        const newBaby = new Männchen(babyX, randomY, 'baby', babyGeneratedName); // Baby-Namen übergeben
+        const newBaby = new Männchen(babyX, randomY, 'baby', babyGeneratedName);
         männchenListe.push(newBaby);
         newBaby.startStageProgression();
 
         console.log(`Baby namens ${newBaby.name} von ${a.name} und ${b.name} erstellt. Aktuelle Babys: ${männchenListe.filter(m => m.stage === 'baby').length}`);
+        // NEU: Log-Eintrag für Baby-Erstellung
+        addToActionLog(`${a.name} hat ein Baby mit ${b.name} bekommen: ${newBaby.name}`);
 
         if (a.x < b.x) {
           a.direction = -1;
@@ -752,29 +793,48 @@ function handleCollision(a, b) {
           a.direction = 1;
           b.direction = -1;
         }
-        a.speed = Math.random() * 0.5 + 0.5;
-        b.speed = Math.random() * 0.5 + 0.5;
-        newBaby.speed = Math.random() * 0.8 + 0.2;
+        // Angepasste Geschwindigkeit nach Interaktion (mit neuem Bereich)
+        a.speed = Math.random() * 0.6 + 0.1;
+        b.speed = Math.random() * 0.6 + 0.1;
+        newBaby.speed = Math.random() * 0.6 + 0.1;
         newBaby.direction = Math.random() < 0.5 ? -1 : 1;
 
       }, BABY_CREATION_DURATION);
     } else {
-      // NEU: Pokern
+      // Pokern (1% Chance)
       const pokerPlayers = [a, b];
       const loser = pokerPlayers[Math.floor(Math.random() * pokerPlayers.length)];
+      const winner = (loser === a) ? b : a;
 
-      a.state = 'playing_poker'; // NEU: Poker-Interaktionszustand
+      a.state = 'playing_poker';
       b.state = 'playing_poker';
       a.animationTimer = Date.now();
       b.animationTimer = Date.now();
 
-      console.log(`${a.name} und ${b.name} pokern. ${loser.name} hat verloren.`);
+      console.log(`${a.name} und ${b.name} pokern. ${loser.name} hat verloren, ${winner.name} hat gewonnen!`);
+
+      // Gewinner erhält 10 Punkte
+      if (scoreboard[winner.name]) {
+        scoreboard[winner.name].kills = (scoreboard[winner.name].kills || 0); // Kills bleiben unverändert
+        scoreboard[winner.name].babies = (scoreboard[winner.name].babies || 0); // Babies bleiben unverändert
+        scoreboard[winner.name].pokerWins = (scoreboard[winner.name].pokerWins || 0) + 1; // Zählt Poker-Siege
+      } else {
+        scoreboard[winner.name] = {
+          kills: 0,
+          babies: 0,
+          pokerWins: 1
+        };
+      }
+      updateScoreboardDisplay();
+
+      // NEU: Log-Eintrag für Poker-Interaktion
+      addToActionLog(`${winner.name} hat gegen ${loser.name} im Poker gewonnen.`);
 
       setTimeout(() => {
         if (a.state.startsWith('playing_poker')) a.state = 'alive';
         if (b.state.startsWith('playing_poker')) b.state = 'alive';
 
-        loser.canHaveBabies = false; // NEU: Verlierer kann keine Babys mehr bekommen
+        loser.canHaveBabies = false;
         console.log(`${loser.name} hat beim Pokern verloren und kann keine Babys mehr bekommen.`);
 
         if (a.x < b.x) {
@@ -784,8 +844,9 @@ function handleCollision(a, b) {
           a.direction = 1;
           b.direction = -1;
         }
-        a.speed = Math.random() * 0.5 + 0.5;
-        b.speed = Math.random() * 0.5 + 0.5;
+        // Angepasste Geschwindigkeit nach Interaktion (mit neuem Bereich)
+        a.speed = Math.random() * 0.6 + 0.1;
+        b.speed = Math.random() * 0.6 + 0.1;
       }, TEEN_INTERACTION_DURATION);
     }
   }
@@ -805,7 +866,8 @@ function updateScoreboardDisplay() {
     .filter(name => activeMaleNames.has(name))
     .map(name => ({
       name: name,
-      score: (scoreboard[name].kills || 0) + (scoreboard[name].babies || 0)
+      score: (scoreboard[name].kills || 0) + (scoreboard[name].babies || 0) + ((scoreboard[name].pokerWins || 0) * 10), // Hier Poker-Gewinne x 10 Punkte hinzufügen
+      pokerWinner: (scoreboard[name].pokerWins || 0) > 0 // Flag whether they are a poker winner
     }))
     .sort((a, b) => b.score - a.score)
     .slice(0, 5);
@@ -815,6 +877,15 @@ function updateScoreboardDisplay() {
   activeScores.forEach(entry => {
     const li = document.createElement('li');
     li.textContent = `${entry.name}: ${entry.score.toFixed(0)}`;
+
+    if (entry.pokerWinner) {
+      const pokerIcon = document.createElement('img');
+      pokerIcon.src = 'poker.png'; // Use the poker image
+      pokerIcon.alt = 'Poker Winner';
+      pokerIcon.classList.add('poker-icon'); // Add a class for styling
+      li.appendChild(pokerIcon);
+    }
+
     scoreList.appendChild(li);
   });
 
