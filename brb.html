@@ -12,19 +12,19 @@
     canvas {
       display: block;
     }
-    /* === Scoreboard CSS NEU === */
-    #scoreboard {
+    #score-list-container {
       position: absolute;
-      top: 10px;
-      left: 10px;
-      background-color: rgba(0, 0, 0, 0.7); /* Semi-transparenter Hintergrund */
+      top: 10px; /* NEU: Oben positionieren */
+      left: 10px; /* Links positionieren */
+      width: 250px; /* Angepasste Breite */
+      background-color: rgba(0, 0, 0, 0.7);
       color: white;
       padding: 10px;
-      border-radius: 5px;
-      font-family: 'Arial', sans-serif;
-      z-index: 1000; /* Stellt sicher, dass das Scoreboard über dem Canvas liegt */
+      border-radius: 8px;
+      font-family: Arial, sans-serif;
+      z-index: 100; /* Sicherstellen, dass es über anderen Elementen liegt */
     }
-    #scoreboard h2 {
+    #score-list-container h2 {
       margin-top: 0;
       font-size: 1.2em;
       text-align: center;
@@ -38,19 +38,71 @@
       margin: 0;
     }
     #score-list li {
-      padding: 2px 0;
+      margin-bottom: 5px;
       font-size: 0.9em;
+      display: flex; /* Für Icon neben Text */
+      align-items: center; /* Vertikale Zentrierung */
     }
-    /* === Ende Scoreboard CSS === */
+    .poker-icon {
+      width: 16px; /* Größe des Icons anpassen */
+      height: 16px;
+      margin-left: 5px; /* Abstand zum Text */
+      vertical-align: middle; /* Vertikale Ausrichtung */
+    }
+
+    /* Styles für das Aktions-Logbuch (unverändert, bleibt oben rechts) */
+    #action-log-container {
+        position: absolute;
+        top: 10px;
+        right: 10px;
+        width: 300px; /* Breite des Logbuchs */
+        max-height: 400px; /* Maximale Höhe, damit es scrollbar wird */
+        background-color: rgba(0, 0, 0, 0.7);
+        color: white;
+        padding: 10px;
+        border-radius: 8px;
+        font-family: Arial, sans-serif;
+        overflow-y: auto; /* Scrollbar, wenn Inhalt die Max-Höhe überschreitet */
+        z-index: 100; /* Sicherstellen, dass es über anderen Elementen liegt */
+    }
+
+    #action-log-container h2 {
+        margin-top: 0;
+        font-size: 1.2em;
+        text-align: center;
+        border-bottom: 1px solid rgba(255, 255, 255, 0.3);
+        padding-bottom: 5px;
+        margin-bottom: 10px;
+    }
+
+    #action-log {
+        list-style: none;
+        padding: 0;
+        margin: 0;
+    }
+
+    #action-log li {
+        margin-bottom: 5px;
+        font-size: 0.9em;
+        line-height: 1.3;
+    }
   </style>
 </head>
 <body>
   <canvas id="brbCanvas"></canvas>
 
-  <div id="scoreboard">
+  <div id="score-list-container">
     <h2>Scoreboard</h2>
-    <ul id="score-list"></ul>
+    <ul id="score-list">
+      </ul>
   </div>
+
+  <div id="action-log-container">
+      <h2>Aktions-Logbuch</h2>
+      <ul id="action-log">
+          </ul>
+  </div>
+
   <script src="tmi.js"></script>
   <script src="chat.js"></script>
 </body>
