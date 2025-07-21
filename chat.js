@@ -32,6 +32,25 @@ const BABY_CREATION_DURATION = 5 * 1000; // Baby-Erstellung dauert 5 Sekunden
 const TEEN_INTERACTION_DURATION = 3 * 1000; // Teenager-Interaktion dauert 3 Sekunden
 const MAX_BABIES = 15; // NEU: Maximal 15 Babys gleichzeitig
 
+// Globale Deklarationen für Canvas und Kontext
+let canvas;
+let ctx;
+
+// Bilder global deklarieren
+let groundImg = new Image();
+let characterImg = new Image();
+let babyImg = new Image();
+let teenagerImg = new Image();
+let adultImg = new Image();
+let cloudImg = new Image();
+let ghostImg = new Image();
+let gravestoneImg = new Image();
+let heartImg = new Image();
+let soccerImg = new Image();
+let danceImg = new Image();
+let gameImg = new Image();
+let pokerImg = new Image(); // NEU: Poker Bild
+
 // === Hilfsfunktionen ===
 
 // NEU: Funktion zur Generierung einer zufälligen Farbe
@@ -362,8 +381,8 @@ class Männchen {
 
 // === Listen und Bodenkoordinaten ===
 let männchenListe = [];
-const groundMinY = canvas.height - 100;
-const groundMaxY = canvas.height - 60;
+let groundMinY; // Deklariert, wird in init gesetzt
+let groundMaxY; // Deklariert, wird in init gesetzt
 
 // === Bildervorlade-Funktion ===
 function loadImages(sources, callback) {
@@ -385,6 +404,14 @@ function loadImages(sources, callback) {
 
 // === Initialisierung ===
 async function init() {
+  canvas = document.getElementById('brbCanvas');
+  ctx = canvas.getContext('2d');
+  canvas.width = window.innerWidth;
+  canvas.height = window.innerHeight;
+
+  groundMinY = canvas.height - 100;
+  groundMaxY = canvas.height - 60;
+
   const imageSources = {
     ground: 'ground.png',
     character: 'character.png',
@@ -759,7 +786,7 @@ function handleCollision(a, b) {
         }
         a.speed = Math.random() * 0.5 + 0.5;
         b.speed = Math.random() * 0.5 + 0.5;
-      }, TEEN_INTERACTION_DURATION); // Kurze Interaktionsdauer für Poker
+      }, TEEN_INTERACTION_DURATION);
     }
   }
 }
@@ -816,4 +843,5 @@ function animate() {
 }
 
 // === Start der Anwendung ===
-init();
+// Sicherstellen, dass das DOM geladen ist, bevor auf Canvas zugegriffen wird
+window.addEventListener('DOMContentLoaded', init);
