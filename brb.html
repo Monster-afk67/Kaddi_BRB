@@ -8,100 +8,85 @@
       margin: 0;
       overflow: hidden;
       background-color: #222;
+      font-family: Arial, sans-serif;
+      color: white;
     }
     canvas {
       display: block;
-    }
-    #score-list-container {
       position: absolute;
-      top: 10px; /* NEU: Oben positionieren */
-      left: 10px; /* Links positionieren */
-      width: 250px; /* Angepasste Breite */
-      background-color: rgba(0, 0, 0, 0.7);
-      color: white;
-      padding: 10px;
-      border-radius: 8px;
-      font-family: Arial, sans-serif;
-      z-index: 100; /* Sicherstellen, dass es über anderen Elementen liegt */
+      z-index: 1;
     }
-    #score-list-container h2 {
+    #ui-container {
+      position: absolute;
+      top: 0;
+      left: 0;
+      width: 100%;
+      height: 100%;
+      z-index: 2;
+      pointer-events: none; /* Allows mouse events to pass through to elements below */
+      /* Removed flexbox properties as only one main UI element on the left */
+    }
+    .ui-box {
+      background-color: rgba(0, 0, 0, 0.7);
+      padding: 10px;
+      border-radius: 5px;
+      box-shadow: 0 0 10px rgba(0, 0, 0, 0.5);
+      pointer-events: auto; /* Allow interaction with these specific boxes */
+      margin: 20px; /* General margin for UI boxes */
+    }
+    
+    /* === Positionierung des Scoreboards === */
+    #scoreboard-container {
+      position: absolute; /* Absolute Positionierung */
+      top: 30px; /* 20px Abstand vom oberen Rand */
+      left: 1px; /* 20px Abstand vom linken Rand */
+      width: 275px; /* Angepasste Breite */
+    }
+
+    /* Entfernte #action-log-container und #finish-scoreboard-container */
+
+    .ui-box h2 {
       margin-top: 0;
       font-size: 1.2em;
-      text-align: center;
-      border-bottom: 1px solid rgba(255, 255, 255, 0.3);
+      border-bottom: 1px solid #444;
       padding-bottom: 5px;
       margin-bottom: 10px;
     }
-    #score-list {
-      list-style: none;
-      padding: 0;
-      margin: 0;
+    #toggleGraphicsButton {
+      position: absolute;
+      bottom: 20px;
+      left: 50%;
+      transform: translateX(-50%);
+      z-index: 3;
+      pointer-events: auto;
+      background-color: #007bff;
+      color: white;
+      padding: 10px 15px;
+      border: none;
+      border-radius: 5px;
+      cursor: pointer;
+      font-size: 1em;
     }
-    #score-list li {
-      margin-bottom: 5px;
-      font-size: 0.9em;
-      display: flex; /* Für Icon neben Text */
-      align-items: center; /* Vertikale Zentrierung */
-    }
-    .poker-icon {
-      width: 16px; /* Größe des Icons anpassen */
-      height: 16px;
-      margin-left: 5px; /* Abstand zum Text */
-      vertical-align: middle; /* Vertikale Ausrichtung */
-    }
-
-    /* Styles für das Aktions-Logbuch (unverändert, bleibt oben rechts) */
-    #action-log-container {
-        position: absolute;
-        top: 10px;
-        right: 10px;
-        width: 300px; /* Breite des Logbuchs */
-        max-height: 400px; /* Maximale Höhe, damit es scrollbar wird */
-        background-color: rgba(0, 0, 0, 0.7);
-        color: white;
-        padding: 10px;
-        border-radius: 8px;
-        font-family: Arial, sans-serif;
-        overflow-y: auto; /* Scrollbar, wenn Inhalt die Max-Höhe überschreitet */
-        z-index: 100; /* Sicherstellen, dass es über anderen Elementen liegt */
-    }
-
-    #action-log-container h2 {
-        margin-top: 0;
-        font-size: 1.2em;
-        text-align: center;
-        border-bottom: 1px solid rgba(255, 255, 255, 0.3);
-        padding-bottom: 5px;
-        margin-bottom: 10px;
-    }
-
-    #action-log {
-        list-style: none;
-        padding: 0;
-        margin: 0;
-    }
-
-    #action-log li {
-        margin-bottom: 5px;
-        font-size: 0.9em;
-        line-height: 1.3;
+    #toggleGraphicsButton:hover {
+      background-color: #0056b3;
     }
   </style>
 </head>
 <body>
   <canvas id="brbCanvas"></canvas>
 
-  <div id="score-list-container">
-    <h2>Scoreboard</h2>
-    <ul id="score-list">
-      </ul>
+  <div id="ui-container">
+    <div id="scoreboard-container" class="ui-box">
+      <h2>Aktive Spieler</h2>
+      <ul id="score-list">
+        </ul>
+    </div>
   </div>
 
-  <div id="action-log-container">
-      <h2>Aktions-Logbuch</h2>
-      <ul id="action-log">
-          </ul>
-  </div>
+
+<!-- Nur für die Entwicklung notwendig / nützlich:-->
+  <!-- <button id="modeToggleButton" style="position: absolute; bottom: 10px; right: 10px; z-index: 100;">Crowd-Modus</button> -->
+  <!--<button id="toggleGraphicsButton">Grafiken verbergen</button> -->
 
   <script src="tmi.js"></script>
   <script src="chat.js"></script>

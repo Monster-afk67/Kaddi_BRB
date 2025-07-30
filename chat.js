@@ -6,913 +6,913 @@ const channelParam = siteURL.searchParams.get("channel");
 if (channelParam) {
   TwitchChannel = channelParam.toLowerCase().split(",");
 } else {
-  // If no channel is provided, log an error and use a fallback.
-  // This prevents the "Cannot read properties of null (reading 'toLowerCase')" error.
   console.error("No 'channel' parameter found in URL. Please add ?channel=yourchannel to the URL for live chat.");
-  // Fallback to a default channel or inform the user that live chat won't work without a channel.
-  // For production, you might want to stop further execution or provide a visual error.
-  TwitchChannel = ['yourdefaultchannel']; // Replace with a sensible default if you want it to run without a channel
+  TwitchChannel = ['yourdefaultchannel'];
 }
 
 // === Verbindung erstellen ===
 const client = new tmi.Client({
-  options: {
-    debug: true
-  },
+  options: { debug: true },
   channels: TwitchChannel
 });
 
 // === Chatnamen speichern ===
 let chatUsers = new Set();
-// === Liste der aktuellen Männchen, um Duplikate zu vermeiden ===
-let activeMaleNames = new Set(); // Speichert die Namen der aktuell angezeigten Männchen (die von chatUsers stammen)
-
-// Flag, um zu steuern, wann die Lebensdauern der Charaktere aktiv sind
-let lifespansActive = false;
-
-// Scoreboard Daten (Name -> { kills: N, babies: M })
+let activeMaleNames = new Set();
 let scoreboard = {};
-
-// Liste für Charaktere, die auf einen Namen von chatUsers warten
 let unnamedCharactersWaitingForChatName = [];
 
-// === Konstanten für Lebensdauern und Spawning ===
-const BABY_TO_TEEN_TIME = 20 * 1000; // 20 Sekunden als Baby
-const TEEN_TO_ADULT_TIME = 60 * 1000; // 1 Minute als Jugendlicher
-const ADULT_LIFESPAN = 60 * 1000; // 1 Minute als Erwachsener
-const MAX_CHARACTERS = 45; // Erhöht auf 45
-const BABY_CREATION_DURATION = 5 * 1000; // Baby-Erstellung dauert 5 Sekunden
-const TEEN_INTERACTION_DURATION = 3 * 1000; // Teenager-Interaktion dauert 3 Sekunden
-const MAX_BABIES = 15; // Maximal 15 Babys gleichzeitig
-const MAX_LOG_ENTRIES = 10; // Maximale Anzahl der Einträge im Aktions-Logbuch
+// === Konstanten ===
+const FIELD_SIZE = 70; // Angepasst an die Größe eines Feldes für das Brettspiel
+const CHARACTER_SIZE = 50; // Verkleinert für bessere Passform auf Feldern
+const FINISH_LINE_SIZE = FIELD_SIZE; // Finish Line ist Feld 100
 
-// === Globale Deklaration der Canvas-Variablen (damit sie im gesamten Skript zugänglich sind) ===
-let canvas;
-let ctx;
+const SPAWN_PROTECTION_DURATION = 1000;
 
-// === Globale Deklaration der Bildvariablen ===
-let groundImg = new Image();
+const DICE_ROLL_INTERVAL_CLASSIC_MODE = 5000; // Würfel alle 5 Sekunden im Klassischen Modus
+
+// === Globale Variablen ===
+let canvas, ctx;
 let characterImg = new Image();
-let babyImg = new Image();
-let teenagerImg = new Image();
-let adultImg = new Image();
-let cloudImg = new Image();
-let ghostImg = new Image();
-let gravestoneImg = new Image();
-let heartImg = new Image();
-let soccerImg = new Image();
-let danceImg = new Image();
-let gameImg = new Image();
 let pokerImg = new Image();
+let endImg = new Image();
+let crownImg = new Image();
+let portalImg = new Image(); // Portal Bild
+
+// Neue Bildvariablen für die Felder
+let fieldImages = {}; // Objekt, um alle geladenen Feldbilder zu speichern
+let ladderImg = new Image(); // Bild für Leitern
+let snakeImg = new Image(); // Bild für Schlangen
+
+// === Grafik-Sichtbarkeits-Modus ===
+let showGraphics = true;
+
+let diceRollTimer; // Timer für den synchronen Würfelwurf
+
+let finishLine = {};
+let finishedCharacters = []; // Speichert nur Namen der Spieler, die schon einmal das Ziel erreicht haben
+
+let boardFields = []; // Array zur Speicherung der Feldobjekte
+
+// === UI Elemente für den Modus ===
+let gameModeInfoDiv; // Das Div für Spielernamen im Klassischen Modus
+let currentTurnPlayerDisplay; // Zum Anzeigen des Status "Würfeln für alle..."
+
+// Definition von Leitern und Schlangen für das Brettspiel
+const laddersAndSnakes = [
+  // Leitern
+  { start: 4, end: 24, type: 'ladder', displayUntil: 0 },
+  { start: 21, end: 42, type: 'ladder', displayUntil: 0 },
+  { start: 58, end: 81, type: 'ladder', displayUntil: 0 },
+  { start: 73, end: 94, type: 'ladder', displayUntil: 0 },
+  { start: 9, end: 30, type: 'ladder', displayUntil: 0 },
+
+  // Schlangen
+  { start: 98, end: 77, type: 'snake', displayUntil: 0 },
+  { start: 47, end: 26, type: 'snake', displayUntil: 0 },
+  { start: 62, end: 18, type: 'snake', displayUntil: 0 },
+  { start: 16, end: 6, type: 'snake', displayUntil: 0 },
+
+  // Die "Power"- und "Lower"-Felder aus der vorherigen Version beibehalten
+  { start: 100, type: 'power', moveBy: 2 },
+  { start: 19, type: 'power', moveBy: 2 },
+  { start: 9, type: 'power', moveBy: 2 },
+  { start: 69, type: 'lower', moveBy: -2 },
+  { start: 51, type: 'lower', moveBy: -2 },
+  { start: 75, type: 'lower', moveBy: -2 }
+];
+
+// Felder, auf denen Poker gespielt werden kann
+const POKER_FIELDS = [4, 28, 49, 53, 66, 88, 95];
 
 
 // === Hilfsfunktionen ===
-
-// Funktion zur Generierung einer zufälligen Farbe
 function getRandomColor() {
   const letters = '0123456789ABCDEF';
   let color = '#';
-  for (let i = 0; i < 6; i++) {
-    color += letters[Math.floor(Math.random() * 16)];
-  }
+  for (let i = 0; i < 6; i++) color += letters[Math.floor(Math.random() * 16)];
   return color;
 }
 
-// Funktion zur Extraktion der ersten Silbe (vereinfacht)
-function getFirstSyllable(name) {
-  if (!name) return "";
-  let parts = name.split(/[\s-]/); // Trennen nach Leerzeichen oder Bindestrich
-  let firstPart = parts[0];
-  if (firstPart.length <= 3) return firstPart; // Ganzen kurzen ersten Teil verwenden
-  // Vereinfachte Silbentrennung: erste 2-3 Zeichen
-  return firstPart.substring(0, 2 + Math.floor(Math.random() * 2)); // 2 oder 3 Zeichen
-}
-
-// Hilfsfunktion für zufälligen, verfügbaren Namen von chatUsers
 function getAvailableName() {
   const chatUserNames = Array.from(chatUsers);
-  // Filtert Namen, die nicht bereits von einem aktiven Charakter (mit chatUsers-Namen) verwendet werden
-  const availableNames = chatUserNames.filter(name => !activeMaleNames.has(name));
-  if (availableNames.length > 0) {
-    return availableNames[Math.floor(Math.random() * availableNames.length)];
-  }
-  return null; // Kein verfügbarer Name
+  // Filtert Namen, die nicht aktiv sind und noch nicht das Ziel erreicht haben
+  const availableNames = chatUserNames.filter(name => !activeMaleNames.has(name) && !finishedCharacters.includes(name));
+  return availableNames.length > 0 ? availableNames[Math.floor(Math.random() * availableNames.length)] : null;
 }
 
-// Funktion zur Namensfreigabe und Zuweisung an wartende Charaktere
 function releaseNameAndAssignToWaitingCharacter(freedName) {
-  // Nur Namen freigeben, die tatsächlich von chatUsers stammen
   if (chatUsers.has(freedName) && unnamedCharactersWaitingForChatName.length > 0) {
-    const charToName = unnamedCharactersWaitingForChatName.shift(); // Nimm den ersten wartenden Charakter
-    charToName.name = freedName; // Weise den freigewordenen Namen zu
-    activeMaleNames.add(freedName); // Füge den Namen zu den aktiven Namen für den Charakter hinzu
-    charToName.nameColor = getRandomColor(); // Zufällige Farbe für den neu benannten Charakter
+    const charToName = unnamedCharactersWaitingForChatName.shift();
+    charToName.name = freedName;
+    activeMaleNames.add(freedName);
+    charToName.nameColor = getRandomColor();
     console.log(`Zuvor unbenannter Charakter wurde zu ${charToName.name} benannt.`);
+    updateScoreboardDisplay(); // Scoreboard aktualisieren, da ein Name zugewiesen wurde
   }
 }
 
-// NEU: Funktion zum Hinzufügen von Einträgen zum Aktions-Logbuch
-function addToActionLog(message) {
-    const actionLog = document.getElementById('action-log');
-    if (!actionLog) return;
+/**
+ * Berechnet die Pixelkoordinaten für eine gegebene Feldnummer auf einem 10x10 Brett.
+ * Das Brett hat Feld 1 unten links, geht von links nach rechts, dann die nächste Reihe von rechts nach links (Schlangenmuster).
+ * Feld 100 ist oben links.
+ * @param {number} fieldNumber Die Feldnummer (1-100).
+ * @returns {{x: number, y: number}} Die X/Y Pixelkoordinaten des Zentrums des Feldes.
+ */
+function getFieldCoordinates(fieldNumber) {
+  if (fieldNumber < 1) fieldNumber = 1;
+  if (fieldNumber > 100) fieldNumber = 100;
 
-    const li = document.createElement('li');
-    li.textContent = message;
+  const boardCols = 10;
+  const boardRows = 10;
 
-    // Füge den neuen Eintrag am Anfang der Liste ein
-    actionLog.prepend(li);
+  // Reihe von unten gezählt (1-10)
+  const rowFromBottom = Math.ceil(fieldNumber / boardCols);
+  // Reihe von oben gezählt (0-9 für Array-Indizes)
+  const rowFromTop = boardRows - rowFromBottom;
 
-    // Begrenze die Anzahl der Einträge
-    while (actionLog.children.length > MAX_LOG_ENTRIES) {
-        actionLog.removeChild(actionLog.lastChild);
+  let col;
+  if (rowFromBottom % 2 !== 0) {
+    // Ungerade Reihen (von unten, d.h. 1, 3, 5...) gehen von links nach rechts (Feld 1-10, 21-30 etc.)
+    col = (fieldNumber - 1) % boardCols;
+  } else {
+    // Gerade Reihen (von unten, d.h. 2, 4, 6...) gehen von rechts nach links (Feld 20-11, 40-31 etc.)
+    col = boardCols - 1 - ((fieldNumber - 1) % boardCols);
+  }
+
+  const boardPixelWidth = boardCols * FIELD_SIZE;
+  const boardPixelHeight = boardRows * FIELD_SIZE;
+
+  const startX = (canvas.width - boardPixelWidth) / 2;
+  const startY = (canvas.height - boardPixelHeight) / 2;
+
+  // X und Y für die obere linke Ecke des Charakters im Feld
+  // Feld-X + (Feld-Größe / 2) - (Charakter-Größe / 2) zentriert den Charakter im Feld
+  const x = startX + col * FIELD_SIZE + FIELD_SIZE / 2 - CHARACTER_SIZE / 2;
+  const y = startY + rowFromTop * FIELD_SIZE + FIELD_SIZE / 2 - CHARACTER_SIZE / 2;
+
+  return { x: x, y: y };
+}
+
+/**
+ * Calculates the path (sequence of field numbers) for animation.
+ * @param {number} startFieldNum The starting field number.
+ * @param {number} endFieldNum The final destination field number.
+ * @returns {Array<number>} An array of field numbers for each step in the path.
+ */
+function getAnimationPath(startFieldNum, endFieldNum) {
+    const path = [];
+    let current = startFieldNum;
+    let step = (endFieldNum > startFieldNum) ? 1 : -1;
+
+    path.push(current); // Include the starting field
+
+    while (current !== endFieldNum) {
+        current += step;
+        path.push(current);
     }
+    return path;
 }
 
 
-// === Männchen-Klasse ===
 class Männchen {
-  constructor(x, y, initialStage = 'adult', assignedName = null) {
-    this.x = x;
-    this.y = y;
-    this.width = 40;
-    this.height = 40;
-    // Angepasste Geschwindigkeit: langsamer
-    this.speed = Math.random() * 0.6 + 0.1; // Range 0.1 to 0.7 (slightly faster max speed)
-    this.direction = Math.random() < 0.5 ? -1 : 1;
-
-    this.stage = initialStage;
+  constructor(fieldNumber = 1, assignedName = null) {
+    this.currentField = fieldNumber;
+    const coords = getFieldCoordinates(this.currentField);
+    this.x = coords.x;
+    this.y = coords.y;
+    this.width = CHARACTER_SIZE;
+    this.height = CHARACTER_SIZE;
+    this.lastChatTime = Date.now();
+    this.name = assignedName;
+    this.nameColor = 'gray';
     this.state = 'alive';
-
-    this.animationTimer = 0;
-    this.ghostYOffset = 0;
-
-    this.babyCooldownUntil = 0;
     this.interactionCooldownUntil = 0;
-    this.canHaveBabies = true; // Flag für Poker-Verlierer
+    this.spawnProtectionUntil = Date.now() + SPAWN_PROTECTION_DURATION;
+    this.startTime = Date.now(); // Zeitpunkt, zu dem der Charakter gespawnt wurde
+    this.isPortaled = false; // Für die Portal-Animation
 
-    this.lifespanTimers = {
-      teen: null,
-      adult: null,
-      death: null
-    };
-    this.teenToAdultDelay = TEEN_TO_ADULT_TIME;
-    this.adultLifespanRemaining = ADULT_LIFESPAN;
+    // Animation properties
+    this.isMoving = false;
+    this.animationPath = []; // Stores field numbers for the path
+    this.currentPathIndex = 0;
+    this.animationMoveTarget = { x: this.x, y: this.y }; // Current pixel target for animation step
+    this.animationSpeed = 2; // Pixels per frame
+    this.finalDestinationField = fieldNumber; // The ultimate field character will land on after all animations/effects
 
-    this.currentBubble = null;
-    this.bubbleDisplayUntil = 0;
-
-    // Namenszuweisung und Farb-Logik im Konstruktor
-    this.name = assignedName; // Name direkt zuweisen, wenn übergeben (z.B. vom Chat-User oder Baby-Kombination)
-
-    if (this.stage === 'baby') {
-      this.nameColor = 'lightgreen'; // Babys bleiben grün
-    } else if (this.name) { // Wenn ein Name zugewiesen wurde (nicht Baby-generiert), aber nicht Baby-Stage
-      this.nameColor = getRandomColor(); // Zufällige Farbe für Jugendliche und Erwachsene
-      // Wenn der Name von chatUsers stammt (also kein generierter Baby-Name ist), zur activeMaleNames hinzufügen
-      if (chatUsers.has(this.name) && !activeMaleNames.has(this.name)) {
-        activeMaleNames.add(this.name);
-      }
-    } else { // Wenn kein Name zugewiesen wurde (z.g. initialer Spawn und kein Name verfügbar)
+    if (this.name) {
+      this.nameColor = getRandomColor();
+      if (chatUsers.has(this.name) && !activeMaleNames.has(this.name)) activeMaleNames.add(this.name);
+    } else {
       const availableName = getAvailableName();
       if (availableName) {
         this.name = availableName;
         activeMaleNames.add(availableName);
         this.nameColor = getRandomColor();
       } else {
-        this.name = null; // Bleibt vorerst unbenannt
-        unnamedCharactersWaitingForChatName.push(this); // Zur Warteliste hinzufügen
-        console.log(`Charakter ohne Namen gespawnt (Stage: ${this.stage}). Warte auf freien Namen.`);
-        this.nameColor = 'gray'; // Temporäre Farbe für unbenannte Charaktere
+        this.name = null;
+        unnamedCharactersWaitingForChatName.push(this);
+        this.nameColor = 'gray';
       }
-    }
-
-    if (this.stage === 'baby' || (this.stage === 'adult' && lifespansActive)) {
-      this.startStageProgression();
     }
   }
 
-  startStageProgression() {
-    for (const key in this.lifespanTimers) {
-      if (this.lifespanTimers[key]) {
-        clearTimeout(this.lifespanTimers[key]);
-      }
-    }
+  // Initiates movement animation to a target field
+  startMovementAnimation(targetFieldNum) {
+    // Stop any ongoing animation
+    this.isMoving = false;
+    this.animationPath = [];
+    this.currentPathIndex = 0;
 
-    if (this.stage === 'baby') {
-      this.lifespanTimers.teen = setTimeout(() => {
-        if (this.stage === 'baby') {
-          this.stage = 'teen';
-          this.nameColor = getRandomColor(); // Zufällige Farbe für Teenager
-          console.log(`${this.name || 'Ein unbenanntes Baby'} ist jetzt jugendlich.`);
-          this.startStageProgression();
-        }
-      }, BABY_TO_TEEN_TIME);
-    } else if (this.stage === 'teen') {
-      this.lifespanTimers.adult = setTimeout(() => {
-        if (this.stage === 'teen') {
-          this.stage = 'adult';
-          this.nameColor = getRandomColor(); // Zufällige Farbe für Erwachsene
+    this.finalDestinationField = targetFieldNum; // Store the ultimate target
 
-          // Namenswechsel für Erwachsene
-          const newAdultChatName = getAvailableName();
-          if (newAdultChatName) {
-            this.name = newAdultChatName;
-            activeMaleNames.add(newAdultChatName);
-            console.log(`${this.name} ist jetzt erwachsen und heißt ${newAdultChatName}.`);
-          } else {
-            this.name = this.name || "Unbenannter Erwachsener"; // Behalte Teenager-Namen oder "Unbenannter Erwachsener"
-            unnamedCharactersWaitingForChatName.push(this); // Zur Warteliste hinzufügen
-            console.log(`${this.name} ist jetzt erwachsen, aber es war kein neuer Chat-Name verfügbar.`);
-          }
-          this.startStageProgression();
-        }
-      }, this.teenToAdultDelay);
-    } else if (this.stage === 'adult') {
-      this.lifespanTimers.death = setTimeout(() => {
-        if (this.stage === 'adult') {
-          this.state = 'dying';
-          this.animationTimer = Date.now();
-          setTimeout(() => this.state = 'ghost', 500);
-          setTimeout(() => this.state = 'gravestone', 2000);
-          setTimeout(() => {
-            männchenListe = männchenListe.filter(m => m !== this);
-            // Wenn der Charakter einen Namen von activeMaleNames hatte, freigeben
-            if (this.name && activeMaleNames.has(this.name)) {
-              activeMaleNames.delete(this.name);
-              releaseNameAndAssignToWaitingCharacter(this.name);
-              // NEU: Log-Eintrag für den Tod
-              addToActionLog(`${this.name} ist gestorben.`);
-            }
-            // Auch aus der Warteliste entfernen, falls es dort war (z.B. unbenannter Erwachsener)
-            unnamedCharactersWaitingForChatName = unnamedCharactersWaitingForChatName.filter(m => m !== this);
-            updateScoreboardDisplay();
-          }, 3000);
-        }
-      }, this.adultLifespanRemaining);
+    // Build the animation path (field numbers)
+    this.animationPath = getAnimationPath(this.currentField, this.finalDestinationField);
+
+    if (this.animationPath.length > 0) {
+      this.isMoving = true;
+      this.currentPathIndex = 0;
+      // Set the first pixel target in the path (center of the first field in the path)
+      const firstTargetCoords = getFieldCoordinates(this.animationPath[this.currentPathIndex]);
+      this.animationMoveTarget.x = firstTargetCoords.x;
+      this.animationMoveTarget.y = firstTargetCoords.y;
+    } else {
+        // Already at the target, or path is empty
+        this.x = getFieldCoordinates(this.finalDestinationField).x;
+        this.y = getFieldCoordinates(this.finalDestinationField).y;
+        this.currentField = this.finalDestinationField;
+        this.checkFieldEffects(); // Apply effects immediately
+        updateScoreboardDisplay(); // Scoreboard aktualisieren, da Bewegung abgeschlossen
     }
   }
 
-  move() {
-    // Charaktere bewegen sich nur, wenn sie im Zustand 'alive' sind
-    if (this.state === 'alive') {
-      this.x += this.speed * this.direction;
-      if (this.x < 0) {
-        this.x = 0;
-        this.direction = 1;
-      } else if (this.x > canvas.width - this.width) {
-        this.x = canvas.width - this.width;
-        this.direction = -1;
+  // Updates character position during animation
+  updateAnimation() {
+    if (!this.isMoving) return;
+
+    const dx = this.animationMoveTarget.x - this.x;
+    const dy = this.animationMoveTarget.y - this.y;
+    const distance = Math.sqrt(dx * dx + dy * dy);
+
+    if (distance < this.animationSpeed) {
+      // Reached current segment target field, snap to it
+      this.x = this.animationMoveTarget.x;
+      this.y = this.animationMoveTarget.y;
+
+      const previousField = this.currentField; // Store previous field to check for change
+      this.currentField = this.animationPath[this.currentPathIndex]; // Update currentField to reflect reached field in path
+
+      // Call checkFieldEffects if the field actually changed
+      if (this.currentField !== previousField) {
+        this.checkFieldEffects();
       }
-    } else if (this.state === 'ghost') {
-      this.ghostYOffset -= 0.5;
+
+      this.currentPathIndex++;
+      if (this.currentPathIndex >= this.animationPath.length) {
+        // Full animation sequence finished
+        this.isMoving = false;
+        this.animationPath = [];
+        this.currentPathIndex = 0;
+
+        // Ensure final position is exactly the final destination and apply effects
+        this.currentField = this.finalDestinationField;
+        const finalCoords = getFieldCoordinates(this.currentField);
+        this.x = finalCoords.x;
+        this.y = finalCoords.y;
+
+        // One last check for effects on the *final* landing field,
+        // in case the path was only 1 step long or effects weren't checked during path
+        this.checkFieldEffects();
+        updateScoreboardDisplay(); // Scoreboard aktualisieren, da Bewegung abgeschlossen
+      } else {
+        // Move to the next field in the path
+        const nextTargetCoords = getFieldCoordinates(this.animationPath[this.currentPathIndex]);
+        this.animationMoveTarget.x = nextTargetCoords.x;
+        this.animationMoveTarget.y = nextTargetCoords.y;
+      }
+    } else {
+      // Move towards current segment target
+      this.x += (dx / distance) * this.animationSpeed;
+      this.y += (dy / distance) * this.animationSpeed;
+    }
+  }
+
+  // This is the primary method to move a character
+  moveToField(targetField, isInstant = false) {
+    if (isInstant) {
+      this.currentField = targetField;
+      const finalCoords = getFieldCoordinates(this.currentField);
+      this.x = finalCoords.x;
+      this.y = finalCoords.y;
+      this.isMoving = false; // Ensure no lingering animation state
+      this.animationPath = [];
+      this.currentPathIndex = 0;
+      this.checkFieldEffects(); // Apply effects immediately for instant moves (if any further effects)
+      updateScoreboardDisplay(); // Update scoreboard immediately for instant moves
+    } else {
+      this.startMovementAnimation(targetField);
+    }
+  }
+
+  checkFieldEffects() {
+    // If still animating and not an instant move, don't check effects yet.
+    // This check is primarily for animated moves. Instant moves call checkFieldEffects after position update.
+    if (this.isMoving) return;
+
+    const currentEffect = laddersAndSnakes.find(effect => effect.start === this.currentField);
+    if (currentEffect) {
+      let newField = this.currentField;
+      let effectMessage = "";
+      let instantMove = false; // Flag to determine if the move should be instant
+
+      if (currentEffect.type === 'ladder' || currentEffect.type === 'snake') {
+        newField = currentEffect.end;
+        if (currentEffect.start < currentEffect.end) {
+            effectMessage = `ist auf einer Leiter und geht zu Feld ${currentEffect.end}!`;
+        } else if (currentEffect.start > currentEffect.end) {
+            effectMessage = `ist auf einer Schlange und geht zu Feld ${newField}!`;
+        }
+        // Leiter/Schlange für 3 Sekunden sichtbar machen
+        currentEffect.displayUntil = Date.now() + 3000;
+        instantMove = true; // Make ladder/snake moves instant
+
+      } else if (currentEffect.type === 'power') {
+        newField = this.currentField + currentEffect.moveBy;
+        if (newField > 100) newField = 100;
+        effectMessage = `ist auf einem Power-Feld und springt zu Feld ${newField}!`;
+      } else if (currentEffect.type === 'lower') {
+        newField = this.currentField + currentEffect.moveBy;
+        if (newField < 1) newField = 1;
+        effectMessage = `ist auf einem Lower-Feld und fällt zurück zu Feld ${newField}!`;
+      }
+
+      if (newField !== this.currentField) {
+        this.moveToField(newField, instantMove); // Use the instantMove flag
+      }
     }
   }
 
   draw() {
-    let imgToDraw = characterImg;
-    if (this.stage === 'baby') {
-      imgToDraw = babyImg;
-    } else if (this.stage === 'teen') {
-      imgToDraw = teenagerImg;
-    } else if (this.stage === 'adult') {
-      imgToDraw = adultImg;
-    }
-
     ctx.save();
+    // Transparenz-Berechnung entfernt, Alpha ist immer 1.0
+    ctx.globalAlpha = 1.0;
 
-    if (this.state !== 'ghost' && this.state !== 'gravestone') {
-      if (this.direction === -1) {
-        ctx.drawImage(imgToDraw, this.x, this.y, this.width, this.height);
-      } else {
-        ctx.translate(this.x + this.width, this.y);
-        ctx.scale(-1, 1);
-        ctx.drawImage(imgToDraw, 0, 0, this.width, this.height);
-      }
+    ctx.drawImage(characterImg, this.x, this.y, this.width, this.height);
+
+    // Portal-Bild zeichnen, wenn Charakter "portaled" ist
+    if (this.isPortaled && portalImg.complete && portalImg.naturalWidth > 0) {
+        const portalSize = 25; // Feste Größe von 25x25px
+        // Positionierung über dem Kopf des Charakters
+        const portalX = this.x + (this.width / 2) - (portalSize / 2); // Zentriert über dem Charakter
+        const portalY = this.y - portalSize - 5; // 5 Pixel über dem oberen Rand des Charakters
+        ctx.drawImage(portalImg, portalX, portalY, portalSize, portalSize);
     }
 
     ctx.restore();
-
-    // Namen zeichnen (nicht für Geister/Grabsteine und nur, wenn der Name existiert)
-    if (this.name && this.state !== 'ghost' && this.state !== 'gravestone') {
+    if (this.name) {
       ctx.fillStyle = this.nameColor;
-      ctx.font = (this.stage === 'baby' || this.stage === 'teen') ? '10px Arial' : '12px Arial';
-
-      let textX = this.x;
-      if (this.direction === 1 && (this.state !== 'dying' && !this.state.startsWith('playing_') && this.state !== 'loving')) {
-        textX = this.x + this.width - ctx.measureText(this.name).width;
-      }
-      if (this.stage === 'baby' || this.stage === 'teen') {
-        textX = this.x + (this.width / 2) - (ctx.measureText(this.name).width / 2);
-      }
+      ctx.font = '12px Arial';
+      ctx.textAlign = 'center'; // Text zentrieren
+      let textX = this.x + (this.width / 2); // X-Koordinate für die Mitte des Charakters
       ctx.fillText(this.name, textX, this.y - 5);
-    }
-
-    // === Zeichne Emoji/Interaktions-Sprechblase ===
-    if (this.currentBubble && Date.now() < this.bubbleDisplayUntil) {
-      const bubblePadding = 5;
-      ctx.fillStyle = 'rgba(0, 0, 0, 0.7)';
-      const bubbleWidth = 32 + (2 * bubblePadding);
-      const bubbleHeight = 32 + (2 * bubblePadding);
-      const bubbleX = this.x + (this.width / 2) - (bubbleWidth / 2);
-      const bubbleY = this.y - this.height - 25;
-
-      ctx.fillRect(bubbleX, bubbleY, bubbleWidth, bubbleHeight);
-
-      ctx.beginPath();
-      ctx.moveTo(this.x + this.width / 2 - 5, bubbleY + bubbleHeight);
-      ctx.lineTo(this.x + this.width / 2 + 5, bubbleY + bubbleHeight);
-      ctx.lineTo(this.x + this.width / 2, bubbleY + bubbleHeight + 8);
-      ctx.closePath();
-      ctx.fill();
-
-      ctx.fillStyle = 'white';
-      ctx.font = '16px Arial Unicode MS';
-      let emoteImage = new Image;
-      emoteImage.src = this.currentBubble;
-      ctx.drawImage(emoteImage, bubbleX + bubblePadding, bubbleY + bubblePadding, 32, 32)
-    }
-
-    // Spezielle Animationen und Grafiken basierend auf 'state'
-    if (this.state === 'dying') {
-      ctx.drawImage(cloudImg, this.x - 10, this.y - 30, this.width + 20, this.height + 20);
-    } else if (this.state === 'ghost') {
-      ctx.drawImage(ghostImg, this.x, this.y + this.ghostYOffset, this.width, this.height);
-    } else if (this.state === 'gravestone') {
-      ctx.drawImage(gravestoneImg, this.x, this.y + this.height - 20, this.width, 40);
-    } else if (this.state === 'loving') {
-      const pulseSpeed = 0.005;
-      const pulseMagnitude = 0.1;
-      const scale = 1 + Math.sin(Date.now() * pulseSpeed) * pulseMagnitude;
-
-      ctx.save();
-      const heartWidth = this.width / 2;
-      const heartHeight = this.height / 2;
-      const heartX = this.x + this.width / 4;
-      const heartY = this.y - 20;
-
-      ctx.translate(heartX + heartWidth / 2, heartY + heartHeight / 2);
-      ctx.scale(scale, scale);
-      ctx.drawImage(heartImg, -heartWidth / 2, -heartHeight / 2, heartWidth, heartHeight);
-      ctx.restore();
-    } else if (this.state === 'playing_soccer') {
-      const pulseSpeed = 0.005;
-      const pulseMagnitude = 0.1;
-      const scale = 1 + Math.sin(Date.now() * pulseSpeed) * pulseMagnitude;
-      ctx.save();
-      const iconWidth = this.width / 2;
-      const iconHeight = this.height / 2;
-      const iconX = this.x + this.width / 4;
-      const iconY = this.y - 20;
-      ctx.translate(iconX + iconWidth / 2, iconY + iconHeight / 2);
-      ctx.scale(scale, scale);
-      ctx.drawImage(soccerImg, -iconWidth / 2, -iconHeight / 2, iconWidth, iconHeight);
-      ctx.restore();
-    } else if (this.state === 'dancing') {
-      const pulseSpeed = 0.005;
-      const pulseMagnitude = 0.1;
-      const scale = 1 + Math.sin(Date.now() * pulseSpeed) * pulseMagnitude;
-      ctx.save();
-      const iconWidth = this.width / 2;
-      const iconHeight = this.height / 2;
-      const iconX = this.x + this.width / 4;
-      const iconY = this.y - 20;
-      ctx.translate(iconX + iconWidth / 2, iconY + iconHeight / 2);
-      ctx.scale(scale, scale);
-      ctx.drawImage(danceImg, -iconWidth / 2, -iconHeight / 2, iconWidth, iconHeight);
-      ctx.restore();
-    } else if (this.state === 'gaming') {
-      const pulseSpeed = 0.005;
-      const pulseMagnitude = 0.1;
-      const scale = 1 + Math.sin(Date.now() * pulseSpeed) * pulseMagnitude;
-      ctx.save();
-      const iconWidth = this.width / 2;
-      const iconHeight = this.height / 2;
-      const iconX = this.x + this.width / 4;
-      const iconY = this.y - 20;
-      ctx.translate(iconX + iconWidth / 2, iconY + iconHeight / 2);
-      ctx.scale(scale, scale);
-      ctx.drawImage(gameImg, -iconWidth / 2, -iconHeight / 2, iconWidth, iconHeight);
-      ctx.restore();
-    } else if (this.state === 'playing_poker') {
-      const pulseSpeed = 0.005;
-      const pulseMagnitude = 0.1;
-      const scale = 1 + Math.sin(Date.now() * pulseSpeed) * pulseMagnitude;
-      ctx.save();
-      const iconWidth = this.width / 2;
-      const iconHeight = this.height / 2;
-      const iconX = this.x + this.width / 4;
-      const iconY = this.y - 20;
-      ctx.translate(iconX + iconWidth / 2, iconY + iconHeight / 2);
-      ctx.scale(scale, scale);
-      ctx.drawImage(pokerImg, -iconWidth / 2, -iconHeight / 2, iconWidth, iconHeight);
-      ctx.restore();
     }
   }
 }
 
-// === Listen und Bodenkoordinaten ===
 let männchenListe = [];
-let groundMinY; // Deklariert, wird in init gesetzt
-let groundMaxY; // Deklariert, wird in init gesetzt
 
-// === Bildervorlade-Funktion ===
 function loadImages(sources, callback) {
   let images = {};
   let loadedImages = 0;
   let numImages = Object.keys(sources).length;
-
   for (let src in sources) {
     images[src] = new Image();
-    images[src].onload = function() {
-      loadedImages++;
-      if (loadedImages >= numImages) {
+    images[src].onload = () => {
+      if (++loadedImages >= numImages) {
         callback(images);
       }
     };
+    images[src].onerror = () => {
+        console.error(`Fehler beim Laden von Bild: ${images[src].src}`);
+        if (++loadedImages >= numImages) {
+            callback(images);
+        }
+    };
     images[src].src = sources[src];
+  }
+  return images;
+}
+
+function toggleGraphicsVisibility() {
+  showGraphics = !showGraphics;
+  console.log(`Grafiken ${showGraphics ? 'angezeigt' : 'ausgeblendet'}.`);
+  const button = document.getElementById('toggleGraphicsButton');
+  if (button) {
+    button.textContent = showGraphics ? 'Grafiken verbergen' : 'Grafiken anzeigen';
   }
 }
 
-// === Initialisierung ===
-async function init() {
+// === Klassischer Modus Logik Objekt ===
+const classicModeLogic = {
+    isGameRunning: false,
+    turnInterval: null, // Timer für den synchronen Würfelwurf
+
+    startGame: function() {
+        console.log("Starte Klassischen Modus...");
+        this.isGameRunning = true;
+        // männchenListe wird nicht zurückgesetzt, damit Charaktere über Runden hinweg bestehen bleiben
+        currentTurnPlayerDisplay.textContent = 'Warten auf Charaktere...'; // Anpassung des Textes
+        gameModeInfoDiv.style.display = 'block'; // Zeige UI an
+        this.startTurnLoop(); // Starte den Würfel-Loop direkt
+    },
+
+    startTurnLoop: function() {
+        if (this.turnInterval) clearInterval(this.turnInterval); // Alten Timer löschen
+        this.turnInterval = setInterval(() => {
+            if (!this.isGameRunning) {
+                clearInterval(this.turnInterval);
+                this.turnInterval = null;
+                return;
+            }
+            // Alle aktiven Charaktere würfeln gleichzeitig
+            currentTurnPlayerDisplay.textContent = 'Würfeln für alle Charaktere...'; // Aktualisiere UI vor dem Würfeln
+
+            männchenListe.forEach(char => {
+                // Charaktere, die sich bewegen, spielen Poker oder sind fertig, würfeln nicht
+                if (char.state === 'alive' && !char.isMoving && char.interactionCooldownUntil < Date.now()) {
+                    const roll = Math.floor(Math.random() * 6) + 1;
+                    // Der normale Würfelwurf soll weiterhin animiert sein
+                    char.moveToField(char.currentField + roll);
+                    console.log(`[Klassischer Modus] ${char.name} würfelt eine ${roll} und zieht von Feld ${char.currentField} nach ${char.currentField + roll}.`);
+                }
+            });
+
+        }, DICE_ROLL_INTERVAL_CLASSIC_MODE);
+    },
+
+    endGame: function() {
+        console.log("Klassischer Modus beendet. (Alle Charaktere im Ziel). Starte neue Runde...");
+        this.isGameRunning = false;
+        clearInterval(this.turnInterval);
+        this.turnInterval = null;
+        männchenListe = []; // Charaktere zurücksetzen
+        finishedCharacters = []; // Auch die Liste der fertigen Charaktere zurücksetzen
+        activeMaleNames.clear(); // Aktive Namen zurücksetzen
+        unnamedCharactersWaitingForChatName = []; // Wartende Charaktere zurücksetzen
+        updateScoreboardDisplay(); // Scoreboard aktualisieren nach Reset
+        this.startGame(); // Starte sofort neue Runde
+    }
+};
+
+
+function init() {
   canvas = document.getElementById('brbCanvas');
   ctx = canvas.getContext('2d');
   canvas.width = window.innerWidth;
   canvas.height = window.innerHeight;
 
-  groundMinY = canvas.height - 100;
-  groundMaxY = canvas.height - 60;
+  const toggleGraphicsButton = document.getElementById('toggleGraphicsButton');
+  if (toggleGraphicsButton) {
+    toggleGraphicsButton.addEventListener('click', toggleGraphicsVisibility);
+    toggleGraphicsButton.textContent = showGraphics ? 'Grafiken verbergen' : 'Grafiken anzeigen';
+  }
+
+  // === UI Elemente für den Klassischen Modus ===
+  gameModeInfoDiv = document.getElementById('gameModeInfo');
+  currentTurnPlayerDisplay = document.getElementById('currentTurnPlayer');
+
+
+  finishLine = getFieldCoordinates(100);
+  finishLine.width = FINISH_LINE_SIZE;
+  finishLine.height = FINISH_LINE_SIZE;
+
+  const boardCols = 10;
+  const boardRows = 10;
+  const boardPixelWidth = boardCols * FIELD_SIZE;
+  const boardPixelHeight = boardRows * FIELD_SIZE;
+  const startX = (canvas.width - boardPixelWidth) / 2;
+  const startY = (canvas.height - boardPixelHeight) / 2;
+  const adjustment = (FIELD_SIZE - CHARACTER_SIZE) / 2;
+
+  for (let i = 1; i <= 100; i++) {
+    const charCoords = getFieldCoordinates(i);
+    const fieldX = charCoords.x - adjustment;
+    const fieldY = charCoords.y - adjustment;
+    boardFields.push({
+      fieldNumber: i,
+      x: fieldX,
+      y: fieldY,
+      width: FIELD_SIZE,
+      height: FIELD_SIZE,
+      image: null,
+      mirrored: false
+    });
+  }
 
   const imageSources = {
-    ground: 'ground.png',
     character: 'character.png',
-    baby: 'baby.png',
-    teenager: 'teenager.png',
-    adult: 'adult.png',
-    cloud: 'cloud.png',
-    ghost: 'Ghost.png',
-    gravestone: 'Gravestone.png',
-    heart: 'Heart.png',
-    soccer: 'soccer.png',
-    dance: 'dance.png',
-    game: 'game.png',
-    poker: 'poker.png'
+    poker: 'poker.png',
+    end: 'end.png',
+    crown: 'crown.png',
+    portal: 'portal.png',
+    walk: 'walk.png',
+    poker_walk: 'poker_walk.png',
+    power_walk: 'power_walk.png',
+    lower_walk: 'lower_walk.png',
+    curve_right_up: 'curve_right-up.png',
+    curve_right_down: 'curve_right-down.png',
+    ladder: 'ladder.png',
+    snake: 'snake.png',
+    start: 'start.png',
+    finish: 'finish.png'
   };
 
-  loadImages(imageSources, function(images) {
-    groundImg.src = images.ground.src;
+  fieldImages = loadImages(imageSources, images => {
     characterImg.src = images.character.src;
-    babyImg.src = images.baby.src;
-    teenagerImg.src = images.teenager.src;
-    adultImg.src = images.adult.src;
-    cloudImg.src = images.cloud.src;
-    ghostImg.src = images.ghost.src;
-    gravestoneImg.src = images.gravestone.src;
-    heartImg.src = images.heart.src;
-    soccerImg.src = images.soccer.src;
-    danceImg.src = images.dance.src;
-    gameImg.src = images.game.src;
     pokerImg.src = images.poker.src;
+    endImg.src = images.end.src;
+    crownImg.src = images.crown.src;
+    portalImg.src = images.portal.src;
+    ladderImg = images.ladder;
+    snakeImg = images.snake;
+
+    const pokerWalkFields = [4, 19, 23, 28, 49, 53, 66, 71, 88, 95];
+    const powerWalkFields = [100, 19, 9];
+    const lowerWalkFields = [75, 69, 51];
+    const curveRightUpFields = [10, 30, 50, 70, 90];
+    const curveRightDownFields = [11, 31, 51, 71, 91];
+    const mirroredCurveRightUpFields = [20, 40, 60, 80];
+    const mirroredCurveRightDownFields = [21, 41, 61, 81];
+    const fieldsToToggleMirror = [75, 69, 19];
+
+
+    boardFields.forEach(field => {
+        const rowFromBottom = Math.ceil(field.fieldNumber / boardCols);
+        const isRightToLeftRow = rowFromBottom % 2 === 0;
+
+        field.mirrored = isRightToLeftRow;
+
+        if (fieldsToToggleMirror.includes(field.fieldNumber)) {
+            field.mirrored = !field.mirrored;
+        }
+
+        let assignedImage = images.walk;
+
+        if (pokerWalkFields.includes(field.fieldNumber)) {
+            assignedImage = images.poker_walk;
+        }
+        if (powerWalkFields.includes(field.fieldNumber)) {
+            assignedImage = images.power_walk;
+        }
+        if (lowerWalkFields.includes(field.fieldNumber)) {
+            assignedImage = images.lower_walk;
+        }
+
+        if (curveRightUpFields.includes(field.fieldNumber)) {
+            assignedImage = images.curve_right_up;
+            field.mirrored = false;
+        }
+        if (curveRightDownFields.includes(field.fieldNumber)) {
+            assignedImage = images.curve_right_down;
+            field.mirrored = false;
+        }
+        if (mirroredCurveRightUpFields.includes(field.fieldNumber)) {
+            assignedImage = images.curve_right_up;
+            field.mirrored = true;
+        }
+        if (mirroredCurveRightDownFields.includes(field.fieldNumber)) {
+            assignedImage = images.curve_right_down;
+            field.mirrored = true;
+        }
+
+        if (field.fieldNumber === 1) {
+            assignedImage = images.start;
+            field.mirrored = false;
+        }
+        if (field.fieldNumber === 100) {
+            assignedImage = images.finish;
+            field.mirrored = false;
+        }
+        // Feld 9 drehen, falls es nicht schon durch andere Logik richtig ist.
+        if (field.fieldNumber === 9) {
+            field.mirrored = true;
+        }
+
+
+        field.image = assignedImage;
+    });
 
     animate();
-
     const savedScoreboard = localStorage.getItem('characterScoreboard');
-    if (savedScoreboard) {
-      scoreboard = JSON.parse(savedScoreboard);
-    } else {
-      scoreboard = {};
-    }
+    if (savedScoreboard) scoreboard = JSON.parse(savedScoreboard);
+    const savedFinished = localStorage.getItem('finishedCharacters');
+    if (savedFinished) finishedCharacters = JSON.parse(savedFinished);
 
-    // Direct connection to TMI client (simulation mode removed)
-    client.connect().then(() => {
-      console.log(`🤖 Bot ist verbunden mit ${TwitchChannel}`);
-    }).catch(console.error);
+    // Starte den Klassischen Modus beim Laden
+    classicModeLogic.startGame();
 
-    // Initiales Spawning, um MAX_CHARACTERS aufzufüllen
-    spawnMissingCharacters();
-
-    if (männchenListe.length >= 20 && !lifespansActive) {
-      lifespansActive = true;
-      console.log("20 Charaktere erreicht oder überschritten bei Initialisierung. Lebensdauern starten für alle.");
-      männchenListe.forEach(m => {
-        if (!m.lifespanTimers.death && m.stage !== 'baby') {
-          m.startStageProgression();
-        }
-      });
-    }
-    updateScoreboardDisplay();
-
-    setInterval(updateScoreboardDisplay, 5000);
-    setInterval(spawnMissingCharacters, 10000); // Alle 10 Sekunden prüfen, ob Charaktere fehlen
+    client.connect().then(() => console.log(`🤖 Bot ist verbunden mit ${TwitchChannel}`)).catch(console.error);
+    updateScoreboardDisplay(); // Initial einmal aufrufen
   });
+
 }
 
-// Funktion zum proaktiven Spawnen fehlender Charaktere
-function spawnMissingCharacters() {
-  while (männchenListe.length < MAX_CHARACTERS) {
-    const availableName = getAvailableName();
-    if (availableName) {
-      const randomY = Math.random() * (groundMaxY - groundMinY) + groundMinY;
-      const newChar = new Männchen(Math.random() * canvas.width, randomY, 'adult', availableName); // Name direkt übergeben
-      männchenListe.push(newChar);
-      console.log(`Charakter ${newChar.name} proaktiv gespawnt. Gesamt: ${männchenListe.length}`);
-      // NEU: Log-Eintrag für proaktiven Spawn
-      addToActionLog(`${newChar.name} ist beigetreten.`);
-      if (lifespansActive) {
-        newChar.startStageProgression();
-      }
-    } else {
-      console.log("Keine verfügbaren Namen von Chat-Usern, um MAX_CHARACTERS zu erreichen.");
-      break; // Keine Namen verfügbar, Schleife beenden
-    }
-  }
-}
-
-// === Chat-Nachrichten-Handler ===
 client.on('chat', (channel, userstate, message, self) => {
   if (self) return;
-
   const displayName = userstate['display-name'];
   chatUsers.add(displayName);
-
-  let emotes = [];
-  try {
-    emotes = Object.keys(userstate["emotes"]);
-  } catch {
-    emotes = [];
-  }
-
-  if (emotes.length > 0) {
-    const character = männchenListe.find(m => m.name === displayName && m.state === 'alive');
-    if (character) {
-      character.currentBubble = "https://static-cdn.jtvnw.net/emoticons/v2/" + emotes[0] + "/default/light/3.0";
-      character.bubbleDisplayUntil = Date.now() + 3000;
-    }
+  const existingCharacter = männchenListe.find(m => m.name === displayName);
+  if (existingCharacter) {
+    existingCharacter.lastChatTime = Date.now();
     return;
   }
+  const alreadyFinished = finishedCharacters.includes(displayName);
 
-  // Spawne neuen Charakter von Chat-Nachricht, wenn noch Platz ist und Name nicht aktiv
-  if (!activeMaleNames.has(displayName) && männchenListe.length < MAX_CHARACTERS) {
-    const randomY = Math.random() * (groundMaxY - groundMinY) + groundMinY;
-    const newCharacter = new Männchen(Math.random() * canvas.width, randomY, 'adult', displayName); // Name direkt übergeben
-    männchenListe.push(newCharacter);
-    console.log(`Neuer Charakter für ${displayName} gespawnt. Gesamt: ${männchenListe.length}`);
-    // NEU: Log-Eintrag für neuen User
-    addToActionLog(`${displayName} ist dem Spiel beigetreten.`);
-
-    if (lifespansActive) {
-      newCharacter.startStageProgression();
-    } else if (männchenListe.length >= 20) {
-      lifespansActive = true;
-      console.log("20 Charaktere erreicht! Lebensdauern starten für alle bestehenden und zukünftigen Charaktere.");
-      männchenListe.forEach(m => {
-        if (!m.lifespanTimers.death && m.stage !== 'baby') {
-          m.startStageProgression();
-        }
-      });
-    }
-    updateScoreboardDisplay();
+  if (!alreadyFinished) {
+      // Keine maximale Spieleranzahl mehr
+      const newCharacter = new Männchen(1, displayName);
+      newCharacter.lastChatTime = Date.now();
+      newCharacter.nameColor = getRandomColor();
+      newCharacter.spawnProtectionUntil = Date.now() + SPAWN_PROTECTION_DURATION;
+      newCharacter.startTime = Date.now();
+      männchenListe.push(newCharacter);
+      activeMaleNames.add(displayName); // Als aktiv markieren
+      console.log(`[Klassischer Modus] Neuer Charakter für ${displayName} gespawnt. Gesamt: ${männchenListe.length}`);
+      updateScoreboardDisplay(); // Hier sofort aktualisieren
+  } else {
+      console.log(`Charakter ${displayName} hat das Ziel bereits erreicht und kann nicht erneut spawnen.`);
   }
 });
 
-
-// === Kollisionsprüfung ===
-function checkCollision(a, b) {
-  // Charaktere im Interaktions-Cooldown können keine neuen Kollisionen auslösen
-  if (a === b || Date.now() < a.interactionCooldownUntil || Date.now() < b.interactionCooldownUntil) {
-    return false;
-  }
-
-  if (!(Math.abs(a.x - b.x) < a.width && Math.abs(a.y - b.y) < a.height)) {
-    return false;
-  }
-
-  // Babys interagieren nicht auf spezielle Weise, sie gehen einfach vorbei
-  if (a.stage === 'baby' || b.stage === 'baby') {
-    return false;
-  }
-
-  // Jugendliche interagieren nur mit Jugendlichen
-  if (a.stage === 'teen' && b.stage === 'teen') {
-    if (a.state.startsWith('playing_') || b.state.startsWith('playing_')) {
-      return false;
-    }
-    return true;
-  }
-
-  // Erwachsene interagieren nur mit Erwachsenen
-  if (a.stage === 'adult' && b.stage === 'adult') {
-    if (a.state === 'loving' || b.state === 'loving' || a.state.startsWith('playing_') || b.state.startsWith('playing_')) {
-      return false;
-    }
-    return true;
-  }
-
-  return false;
+function checkCharacterCollision(a, b) {
+  if (a === b || Date.now() < a.interactionCooldownUntil || Date.now() < b.interactionCooldownUntil) return false;
+  if (Date.now() < a.spawnProtectionUntil || Date.now() < b.spawnProtectionUntil) return false;
+  return a.currentField === b.currentField;
 }
 
-// === Kollisionsbehandlung ===
-function handleCollision(a, b) {
-  if (a.state !== 'alive' || b.state !== 'alive') return;
+function handleCharacterCollision(a, b) {
+  if (a.state !== 'alive' || b.state !== 'alive' || a.isMoving || b.isMoving) return;
 
-  const r = Math.random();
+  // Nur Poker spielen, wenn die Kollision auf einem Pokerfeld stattfindet
+  if (POKER_FIELDS.includes(a.currentField)) {
+      const COOLDOWN_DURATION = 2 * 1000;
+      a.interactionCooldownUntil = Date.now() + COOLDOWN_DURATION;
+      b.interactionCooldownUntil = Date.now() + COOLDOWN_DURATION;
 
-  // === Behandlung von Teenager-Teenager-Interaktionen ===
-  if (a.stage === 'teen' && b.stage === 'teen') {
-    // Set 2-second cooldown for any interaction attempt
-    a.interactionCooldownUntil = Date.now() + (2 * 1000);
-    b.interactionCooldownUntil = Date.now() + (2 * 1000);
+      if (Math.random() < 0.2) {
+        a.state = 'playing_poker';
+        b.state = 'playing_poker';
+        const POKER_DURATION = 3 * 1000;
+        const loser = Math.random() < 0.5 ? a : b;
+        const winner = loser === a ? b : a;
+        console.log(`${a.name} und ${b.name} spielen Poker. ${winner.name} hat gewonnen!`);
+        if (scoreboard[winner.name]) scoreboard[winner.name].pokerWins = (scoreboard[winner.name].pokerWins || 0) + 1;
+        else scoreboard[winner.name] = { pokerWins: 1 };
+        updateScoreboardDisplay(); // Hier sofort aktualisieren
 
-    let interactionType;
-    if (r < 0.33) {
-      interactionType = 'soccer';
-    } else if (r < 0.66) {
-      interactionType = 'dance';
-    } else {
-      interactionType = 'game';
-    }
+        // Verlierer erhält Portal-Effekt
+        loser.isPortaled = true;
 
-    const winner = Math.random() < 0.5 ? a : b;
-    const loser = (winner === a) ? b : a;
+        setTimeout(() => {
+          if (a.state === 'playing_poker') a.state = 'alive';
+          if (b.state === 'playing_poker') b.state = 'alive';
 
-    a.state = `playing_${interactionType}`;
-    b.state = `playing_${interactionType}`;
-    a.animationTimer = Date.now();
-    b.animationTimer = Date.now();
+          // Verlierer geht direkt auf Feld 1 (sollte instant sein)
+          loser.moveToField(1, true); // Instant Teleport
 
-    console.log(`${a.name} und ${b.name} sind in einem ${interactionType}-Kampf! ${winner.name} hat gewonnen.`);
+          // Gewinner 2 Felder vor (sollte animiert sein)
+          winner.moveToField(winner.currentField + 2, false); // Animierter Move
 
-    setTimeout(() => {
-      if (a.state.startsWith('playing_')) a.state = 'alive';
-      if (b.state.startsWith('playing_')) b.state = 'alive';
+          loser.isPortaled = false; // Portal-Effekt beenden
 
-      if (interactionType === 'soccer') {
-        loser.stage = 'baby';
-        loser.teenToAdultDelay = TEEN_TO_ADULT_TIME;
-        loser.adultLifespanRemaining = ADULT_LIFESPAN;
-        loser.startStageProgression();
-        addToActionLog(`${winner.name} hat gegen ${loser.name} im Fußball gewonnen. ${loser.name} wurde wieder zum Baby.`); // NEU: Log-Eintrag
-      } else if (interactionType === 'dance') {
-        loser.teenToAdultDelay += 60 * 1000;
-        loser.startStageProgression();
-        addToActionLog(`${winner.name} hat gegen ${loser.name} im Tanzkampf gewonnen. ${loser.name} braucht länger zum Erwachsenwerden.`); // NEU: Log-Eintrag
-      } else if (interactionType === 'game') {
-        loser.stage = 'adult';
-        loser.adultLifespanRemaining = 40 * 1000;
-        loser.startStageProgression();
-        addToActionLog(`${winner.name} hat gegen ${loser.name} im Game Battle gewonnen. ${loser.name} wurde sofort erwachsen.`); // NEU: Log-Eintrag
-      }
+          winner.spawnProtectionUntil = Date.now() + SPAWN_PROTECTION_DURATION;
+          loser.spawnProtectionUntil = Date.now() + SPAWN_PROTECTION_DURATION;
 
-      if (a.x < b.x) {
-        a.direction = -1;
-        b.direction = 1;
+          updateScoreboardDisplay(); // Hier sofort aktualisieren nach Poker-Effekten
+
+        }, POKER_DURATION);
       } else {
-        a.direction = 1;
-        b.direction = -1;
+        // Bei Nicht-Poker-Kollision im Brettspiel keine Bewegung
       }
-      // Angepasste Geschwindigkeit nach Interaktion (mit neuem Bereich)
-      a.speed = Math.random() * 0.6 + 0.1;
-      b.speed = Math.random() * 0.6 + 0.1;
-
-    }, TEEN_INTERACTION_DURATION);
-    return;
-  }
-
-  // === Behandlung von Erwachsenen-Erwachsenen-Interaktionen (Töten/Baby-Erzeugung/Pokern) ===
-  if (a.stage === 'adult' && b.stage === 'adult') {
-    // Set 2-second cooldown for any interaction attempt
-    a.interactionCooldownUntil = Date.now() + (2 * 1000);
-    b.interactionCooldownUntil = Date.now() + (2 * 1000);
-
-    const currentBabies = männchenListe.filter(m => m.stage === 'baby').length;
-
-    if (r < 0.33) {
-      // Töten (33% Chance)
-      const victim = Math.random() < 0.5 ? a : b;
-      const killer = (victim === a) ? b : a;
-
-      if (scoreboard[killer.name]) {
-        scoreboard[killer.name].kills = (scoreboard[killer.name].kills || 0) + 1;
-      } else {
-        scoreboard[killer.name] = {
-          kills: 1,
-          babies: 0
-        };
-      }
-      updateScoreboardDisplay();
-
-      victim.state = 'dying';
-      victim.animationTimer = Date.now();
-
-      killer.state = 'loving'; // Killer shows hearts briefly
-      setTimeout(() => {
-        if (killer.state === 'loving') killer.state = 'alive';
-      }, 1000); // Heart animation for killer for 1 second
-
-      // NEU: Log-Eintrag für Tötung
-      addToActionLog(`${killer.name} hat ${victim.name} geschlagen.`);
-
-      setTimeout(() => victim.state = 'ghost', 500);
-      setTimeout(() => victim.state = 'gravestone', 2000);
-      setTimeout(() => {
-        männchenListe = männchenListe.filter(m => m !== victim);
-        if (victim.name && activeMaleNames.has(victim.name)) {
-          activeMaleNames.delete(victim.name);
-          releaseNameAndAssignToWaitingCharacter(victim.name);
-        }
-        unnamedCharactersWaitingForChatName = unnamedCharactersWaitingForChatName.filter(m => m !== victim);
-        updateScoreboardDisplay();
-      }, 3000);
-    } else if (r < 0.99) {
-      // Baby erzeugen (66% Chance)
-      // Prüfung des Baby-Limits und canHaveBabies-Flags
-      if (currentBabies >= MAX_BABIES) {
-        console.log(`Baby-Erstellung übersprungen: Maximal ${MAX_BABIES} Babys gleichzeitig erlaubt.`);
-        return;
-      }
-      if (!a.canHaveBabies || !b.canHaveBabies) {
-        console.log(`Baby-Erstellung übersprungen: ${a.name} oder ${b.name} kann keine Babys mehr bekommen.`);
-        return;
-      }
-      // Baby-Erstellungs-Cooldown für Erwachsene prüfen (zusätzlich zum allgemeinen Interaktions-Cooldown)
-      if (Date.now() < a.babyCooldownUntil || Date.now() < b.babyCooldownUntil) {
-        console.log("Baby-Erstellung aufgrund von Cooldown übersprungen.");
-        return;
-      }
-
-      a.state = 'loving';
-      b.state = 'loving';
-      a.animationTimer = Date.now();
-      b.animationTimer = Date.now();
-
-      const now = Date.now();
-      // Baby-Cooldown: 5s Interaktion + 15s kein Baby = 20s
-      a.babyCooldownUntil = now + (5 * 1000) + (15 * 1000); // 20 Sekunden
-      b.babyCooldownUntil = now + (5 * 1000) + (15 * 1000); // 20 Sekunden
-
-
-      if (scoreboard[a.name]) {
-        scoreboard[a.name].babies = (scoreboard[a.name].babies || 0) + 1;
-      } else {
-        scoreboard[a.name] = {
-          kills: 0,
-          babies: 1
-        };
-      }
-      if (scoreboard[b.name]) {
-        scoreboard[b.name].babies = (scoreboard[b.name].babies || 0) + 1;
-      } else {
-        scoreboard[b.name] = {
-          kills: 0,
-          babies: 1
-        };
-      }
-      updateScoreboardDisplay();
-
-      setTimeout(() => {
-        if (a.state === 'loving') a.state = 'alive';
-        if (b.state === 'loving') b.state = 'alive';
-
-        const babyX = (a.x + b.x) / 2;
-        const randomY = Math.random() * (groundMaxY - groundMinY) + groundMinY;
-
-        // Baby-Namen aus Silben der Eltern zusammensetzen
-        const babyGeneratedName = getFirstSyllable(a.name) + getFirstSyllable(b.name);
-        const newBaby = new Männchen(babyX, randomY, 'baby', babyGeneratedName);
-        männchenListe.push(newBaby);
-        newBaby.startStageProgression();
-
-        console.log(`Baby namens ${newBaby.name} von ${a.name} und ${b.name} erstellt. Aktuelle Babys: ${männchenListe.filter(m => m.stage === 'baby').length}`);
-        // NEU: Log-Eintrag für Baby-Erstellung
-        addToActionLog(`${a.name} hat ein Baby mit ${b.name} bekommen: ${newBaby.name}`);
-
-        if (a.x < b.x) {
-          a.direction = -1;
-          b.direction = 1;
-        } else {
-          a.direction = 1;
-          b.direction = -1;
-        }
-        // Angepasste Geschwindigkeit nach Interaktion (mit neuem Bereich)
-        a.speed = Math.random() * 0.6 + 0.1;
-        b.speed = Math.random() * 0.6 + 0.1;
-        newBaby.speed = Math.random() * 0.6 + 0.1;
-        newBaby.direction = Math.random() < 0.5 ? -1 : 1;
-
-      }, BABY_CREATION_DURATION);
-    } else {
-      // Pokern (1% Chance)
-      const pokerPlayers = [a, b];
-      const loser = pokerPlayers[Math.floor(Math.random() * pokerPlayers.length)];
-      const winner = (loser === a) ? b : a;
-
-      a.state = 'playing_poker';
-      b.state = 'playing_poker';
-      a.animationTimer = Date.now();
-      b.animationTimer = Date.now();
-
-      console.log(`${a.name} und ${b.name} pokern. ${loser.name} hat verloren, ${winner.name} hat gewonnen!`);
-
-      // Gewinner erhält 10 Punkte
-      if (scoreboard[winner.name]) {
-        scoreboard[winner.name].kills = (scoreboard[winner.name].kills || 0); // Kills bleiben unverändert
-        scoreboard[winner.name].babies = (scoreboard[winner.name].babies || 0); // Babies bleiben unverändert
-        scoreboard[winner.name].pokerWins = (scoreboard[winner.name].pokerWins || 0) + 1; // Zählt Poker-Siege
-      } else {
-        scoreboard[winner.name] = {
-          kills: 0,
-          babies: 0,
-          pokerWins: 1
-        };
-      }
-      updateScoreboardDisplay();
-
-      // NEU: Log-Eintrag für Poker-Interaktion
-      addToActionLog(`${winner.name} hat gegen ${loser.name} im Poker gewonnen.`);
-
-      setTimeout(() => {
-        if (a.state.startsWith('playing_poker')) a.state = 'alive';
-        if (b.state.startsWith('playing_poker')) b.state = 'alive';
-
-        loser.canHaveBabies = false;
-        console.log(`${loser.name} hat beim Pokern verloren und kann keine Babys mehr bekommen.`);
-
-        if (a.x < b.x) {
-          a.direction = -1;
-          b.direction = 1;
-        } else {
-          a.direction = 1;
-          b.direction = -1;
-        }
-        // Angepasste Geschwindigkeit nach Interaktion (mit neuem Bereich)
-        a.speed = Math.random() * 0.6 + 0.1;
-        b.speed = Math.random() * 0.6 + 0.1;
-      }, TEEN_INTERACTION_DURATION);
-    }
   }
 }
 
-// === Boden zeichnen ===
-function drawGround() {
-  ctx.drawImage(groundImg, 0, groundMaxY, canvas.width, canvas.height - groundMaxY);
-}
-
-// === Scoreboard Anzeige aktualisieren ===
 function updateScoreboardDisplay() {
   const scoreList = document.getElementById('score-list');
   if (!scoreList) return;
-
-  const activeScores = Object.keys(scoreboard)
-    .filter(name => activeMaleNames.has(name))
-    .map(name => ({
-      name: name,
-      score: (scoreboard[name].kills || 0) + (scoreboard[name].babies || 0) + ((scoreboard[name].pokerWins || 0) * 10), // Hier Poker-Gewinne x 10 Punkte hinzufügen
-      pokerWinner: (scoreboard[name].pokerWins || 0) > 0 // Flag whether they are a poker winner
-    }))
-    .sort((a, b) => b.score - a.score)
-    .slice(0, 5);
-
   scoreList.innerHTML = '';
 
-  activeScores.forEach(entry => {
-    const li = document.createElement('li');
-    li.textContent = `${entry.name}: ${entry.score.toFixed(0)}`;
+  let charactersToDisplay = männchenListe.filter(char => char.state === 'alive' || char.state === 'playing_poker');
 
-    if (entry.pokerWinner) {
-      const pokerIcon = document.createElement('img');
-      pokerIcon.src = 'poker.png'; // Use the poker image
-      pokerIcon.alt = 'Poker Winner';
-      pokerIcon.classList.add('poker-icon'); // Add a class for styling
-      li.appendChild(pokerIcon);
+
+  const sortedCharacters = charactersToDisplay
+    .sort((a, b) => {
+      if (a.currentField !== b.currentField) {
+        return b.currentField - a.currentField;
+      }
+      return a.name.localeCompare(b.name);
+    });
+
+  // Maximale Länge des Namens für Formatierung ermitteln
+  let maxNameLength = 0;
+  sortedCharacters.forEach(char => {
+    if (char.name && char.name.length > maxNameLength) {
+      maxNameLength = char.name.length;
+    }
+  });
+
+  sortedCharacters.forEach(char => {
+    const li = document.createElement('li');
+
+    let crownHtml = '';
+    if (finishedCharacters.includes(char.name)) {
+        crownHtml = `<img src="${crownImg.src}" alt="Crown" style="width: 16px; height: 16px; vertical-align: middle; margin-left: 5px;">`;
     }
 
+    // Formatierung der Ausgabe
+    const paddedName = char.name.padEnd(maxNameLength, ' ');
+    const paddedField = String(char.currentField).padStart(3, ' '); // Feldnummer immer dreistellig (z.B. "  3", " 10", "100")
+    li.innerHTML = `${paddedName} | Feld: ${paddedField} ${crownHtml}`;
     scoreList.appendChild(li);
   });
 
   localStorage.setItem('characterScoreboard', JSON.stringify(scoreboard));
+  localStorage.setItem('finishedCharacters', JSON.stringify(finishedCharacters));
 }
 
-// === Animationsschleife ===
 function animate() {
   ctx.clearRect(0, 0, canvas.width, canvas.height);
-  drawGround();
+  ctx.globalAlpha = 1.0;
 
-  männchenListe.sort((a, b) => a.y - b.y);
+  boardFields.forEach(field => {
+    if (showGraphics) {
+      if (field.image) {
+        ctx.save();
+        let drawX = field.x;
+        let drawY = field.y;
 
-  männchenListe.forEach(m => m.move());
-  männchenListe.forEach(m => m.draw());
+        if (field.mirrored) {
+          ctx.translate(drawX + field.width, drawY);
+          ctx.scale(-1, 1);
+          drawX = 0;
+          drawY = 0;
+        }
 
-  for (let i = 0; i < männchenListe.length; i++) {
-    for (let j = i + 1; j < männchenListe.length; j++) {
-      if (checkCollision(männchenListe[i], männchenListe[j])) {
-        handleCollision(männchenListe[i], männchenListe[j]);
+        ctx.drawImage(field.image, drawX, drawY, field.width, field.height);
+        ctx.restore();
+      } else {
+        ctx.fillStyle = '#CCCCCC';
+        ctx.fillRect(field.x, field.y, field.width, field.height);
+        ctx.strokeStyle = '#666666';
+        ctx.lineWidth = 1;
+        ctx.strokeRect(field.x, field.y, field.width, field.height);
+        ctx.fillStyle = '#000000';
+        ctx.font = '12px Arial';
+        ctx.textAlign = 'center';
+        ctx.textBaseline = 'middle';
+        ctx.fillText(field.fieldNumber, field.x + field.width / 2, field.y + field.height / 2);
       }
+
+      ctx.fillStyle = '#000000';
+      ctx.font = 'bold 14px Arial';
+      ctx.textAlign = 'center';
+      ctx.textBaseline = 'middle';
+      ctx.fillText(field.fieldNumber, field.x + field.width / 2, field.y + field.height / 2);
+
+
+    } else {
+      const isActionField = laddersAndSnakes.some(effect =>
+        (effect.type === 'power' || effect.type === 'lower') && effect.start === field.fieldNumber
+      );
+
+      if (isActionField) {
+        ctx.fillStyle = '#FFFF00';
+      } else {
+        ctx.fillStyle = '#333333';
+      }
+
+      ctx.fillRect(field.x, field.y, field.width, field.height);
+      ctx.strokeStyle = '#999999';
+      ctx.lineWidth = 1;
+      ctx.strokeRect(field.x, field.y, field.width, field.height);
+      ctx.fillStyle = '#FFFFFF';
+      ctx.font = 'bold 16px Arial';
+      ctx.textAlign = 'center';
+      ctx.textBaseline = 'middle';
+      ctx.fillText(field.fieldNumber, field.x + field.width / 2, field.y + field.height / 2);
+    }
+  });
+
+  if (showGraphics) {
+      // === Zeichne Leitern und Schlangen ===
+      laddersAndSnakes.forEach(effect => {
+        if ((effect.type === 'ladder' || effect.type === 'snake') && (ladderImg.complete && ladderImg.naturalWidth > 0) && (snakeImg.complete && snakeImg.naturalWidth > 0)) {
+
+            // NUR Zeichnen, wenn der displayUntil-Zeitpunkt noch nicht abgelaufen ist
+            if (effect.displayUntil > Date.now()) {
+                const startCoordsChar = getFieldCoordinates(effect.start);
+                const endCoordsChar = getFieldCoordinates(effect.end);
+
+                // Zentren der Felder für die Linie
+                const startX = startCoordsChar.x + CHARACTER_SIZE / 2;
+                const startY = startCoordsChar.y + CHARACTER_SIZE / 2;
+                const endX = endCoordsChar.x + CHARACTER_SIZE / 2;
+                const endY = endCoordsChar.y + CHARACTER_SIZE / 2;
+
+                const dx = endX - startX;
+                const dy = endY - startY;
+
+                const length = Math.sqrt(dx * dx + dy * dy);
+                const angle = Math.atan2(dy, dx); // Angle of the line relative to the x-axis
+
+                const actualImageToDraw = (effect.type === 'ladder') ? ladderImg : snakeImg;
+
+                // Adjust rotation for images that are vertically oriented by default
+                // If your images are oriented along their height (top to bottom is length)
+                // and you want them to align with the line's angle, you often need to subtract 90 degrees (PI/2 radians).
+                const rotationAngle = angle - Math.PI / 2;
+
+                // Scale the image based on its natural height to fit the calculated length
+                const scaledWidth = actualImageToDraw.naturalWidth * (length / actualImageToDraw.naturalHeight);
+
+                ctx.save();
+                ctx.translate(startX, startY); // Move origin to the start of the line
+                ctx.rotate(rotationAngle); // Rotate by the adjusted angle
+
+                // Draw the image:
+                // -scaledWidth / 2 : Centers the image horizontally relative to the rotated y-axis
+                // 0                : Places the top of the image at the origin (startX, startY in original coords)
+                // scaledWidth      : The scaled width of the image
+                // length           : The length of the line (which becomes the height of the image)
+                ctx.drawImage(actualImageToDraw, -scaledWidth / 2, 0, scaledWidth, length);
+                ctx.restore();
+            }
+        }
+      });
+  } else {
+    ctx.lineWidth = 3;
+    laddersAndSnakes.forEach(effect => {
+      if (effect.type === 'ladder' || effect.type === 'snake') {
+        const startField = boardFields.find(f => f.fieldNumber === effect.start);
+        const endField = boardFields.find(f => f.fieldNumber === effect.end);
+
+        if (startField && endField) {
+          const startX = startField.x + startField.width / 2;
+          const startY = startField.y + startField.height / 2;
+          const endX = endField.x + endField.width / 2;
+          const endY = endField.y + endField.height / 2;
+
+          ctx.beginPath();
+          ctx.moveTo(startX, startY);
+          ctx.lineTo(endX, endY);
+
+          if (effect.end > effect.start) {
+            ctx.strokeStyle = '#FFFF00';
+          } else {
+            ctx.strokeStyle = '#FF0000';
+          }
+          ctx.stroke();
+        }
+      }
+    });
+  }
+
+  // === Charaktere werden animiert ===
+  for (let i = männchenListe.length - 1; i >= 0; i--) {
+    const char = männchenListe[i];
+    char.updateAnimation();
+    if (showGraphics) {
+        char.draw();
+    }
+
+    // Kollisionserkennung und Ziel-Erkennung
+    if (char.state === 'alive' && !char.isMoving) { // Nur prüfen, wenn Charakter nicht gerade in Bewegung ist
+        for (let j = i + 1; j < männchenListe.length; j++) {
+            const otherChar = männchenListe[j];
+            if (otherChar.state === 'alive' && !otherChar.isMoving && checkCharacterCollision(char, otherChar)) {
+                handleCharacterCollision(char, otherChar);
+            }
+        }
+
+        // Ziel-Erkennung
+        if (char.currentField >= 100) {
+            if (!finishedCharacters.includes(char.name)) {
+                finishedCharacters.push(char.name);
+                char.state = 'finished';
+
+                console.log(`[Klassischer Modus] ${char.name} hat das Ziel erreicht.`);
+                // Den Charakter aus der aktiven Liste entfernen, da er das Ziel erreicht hat
+                const charIndex = männchenListe.indexOf(char);
+                if (charIndex > -1) { männchenListe.splice(charIndex, 1); }
+                activeMaleNames.delete(char.name);
+
+                updateScoreboardDisplay(); // Hier sofort aktualisieren
+            }
+        }
     }
   }
 
   requestAnimationFrame(animate);
 }
 
-// === Start der Anwendung ===
-// Sicherstellen, dass das DOM geladen ist, bevor auf Canvas zugegriffen wird
-window.addEventListener('DOMContentLoaded', init);
+window.onload = init;
