@@ -3,6 +3,12 @@ Zeigt Benutzernamen aus dem Twitch Chat als Figuren an, um Pausen zu überbrück
 
 Der Twitch-Kanalname wird als URL-Parameter übergeben: brb.html?channel=kanalname
 
+# Link
+
+https://monster-afk67.github.io/Kaddi_BRB/brb.html?channel=YOURCHANNELNAME
+
+Um die Anwendung mit einem Twitch-Chat zu verbinden, ersetze YOURCHANNELNAME gegen den Channel Name das Channels mit welche du dich verbinden möchtest.
+
 # Grafiken
 Die bereits existierenden Grafiken dürfen verwendet werden.
 Für jeden der seine eigenen Grafiken sind hier die Daten (in pixel)
