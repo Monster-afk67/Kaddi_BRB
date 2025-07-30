@@ -24,9 +24,10 @@ lower_walk: 9, 19
 
 power_walk: 69, 75
 
+
 # Funktionen im chat.js Skript
 
-1. init()
+# 1. init()
 Zweck: Initialisiert die gesamte Anwendung beim Laden der Seite.
 
 Funktionalität:
@@ -45,7 +46,7 @@ Startet den "Klassischen Modus" des Spiels.
 
 Ruft animate() auf, um die Rendering-Schleife zu starten.
 
-2. animate()
+# 2. animate()
 Zweck: Die Haupt-Animationsschleife des Spiels.
 
 Funktionalität:
@@ -60,7 +61,7 @@ Führt Kollisionserkennung und Ziel-Erkennung für Charaktere durch.
 
 Fordert den nächsten Animationsframe an (requestAnimationFrame).
 
-3. Männchen (Klasse)
+# 3. Männchen (Klasse)
 Zweck: Repräsentiert einen einzelnen Spielercharakter auf dem Spielfeld.
 
 Wichtige Methoden:
@@ -77,7 +78,7 @@ checkFieldEffects(): Überprüft, ob der Charakter auf einem speziellen Feld (Le
 
 draw(): Zeichnet den Charakter und seinen Namen auf dem Canvas.
 
-4. client.on('chat', ...) (Twitch Chat Listener)
+# 4. client.on('chat', ...) (Twitch Chat Listener)
 Zweck: Verarbeitet eingehende Nachrichten vom Twitch-Chat.
 
 Funktionalität:
@@ -90,7 +91,7 @@ Aktualisiert lastChatTime für bestehende Charaktere.
 
 Ruft updateScoreboardDisplay() auf, um die Anzeige der aktiven Spieler sofort zu aktualisieren.
 
-5. classicModeLogic (Objekt)
+# 5. classicModeLogic (Objekt)
 Zweck: Kapselt die Logik für den klassischen Spielmodus (automatische Würfelwürfe für alle aktiven Spieler).
 
 Wichtige Methoden:
@@ -101,12 +102,12 @@ startTurnLoop(): Startet einen setInterval-Timer, der in regelmäßigen Abständ
 
 endGame(): Wird aufgerufen, wenn alle Charaktere das Ziel erreicht haben. Setzt das Spiel zurück und startet eine neue Runde.
 
-6. getFieldCoordinates(fieldNumber)
+# 6. getFieldCoordinates(fieldNumber)
 Zweck: Berechnet die Pixelkoordinaten auf dem Canvas für eine gegebene Feldnummer (1-100) des Brettspiels.
 
 Funktionalität: Berücksichtigt das "Schlangenmuster" des Bretts (ungerade Reihen von links nach rechts, gerade Reihen von rechts nach links) und zentriert den Charakter im Feld.
 
-7. updateScoreboardDisplay()
+# 7. updateScoreboardDisplay()
 Zweck: Aktualisiert die Liste der aktiven Spieler im "Aktive Spieler" Fenster der Benutzeroberfläche.
 
 Funktionalität:
@@ -117,7 +118,7 @@ Generiert <li>-Elemente für jeden Charakter mit Namen, Feldnummer und ggf. eine
 
 Speichert den aktuellen Scoreboard-Status und die Liste der beendeten Charaktere im localStorage.
 
-8. handleCharacterCollision(a, b)
+# 8. handleCharacterCollision(a, b)
 Zweck: Verarbeitet die Interaktion, wenn zwei Charaktere auf demselben Feld landen.
 
 Funktionalität:
@@ -134,7 +135,7 @@ Setzt einen kurzen Cooldown für weitere Interaktionen.
 
 Aktualisiert das Scoreboard.
 
-9. toggleGraphicsVisibility()
+# 9. toggleGraphicsVisibility()
 Zweck: Schaltet die Sichtbarkeit der Brettspielgrafiken um.
 
 Funktionalität: Wechselt zwischen der detaillierten Grafikansicht und einer vereinfachten Ansicht mit nur den Feldnummern.
