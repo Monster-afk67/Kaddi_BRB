@@ -1,20 +1,10 @@
+console.log("chat.js wird geladen...");
 // === Twitch Verbindung ===
-let siteURL = new URL(window.location);
 let TwitchChannel;
+let currentTheme; // Global variable for the selected theme
 
-const channelParam = siteURL.searchParams.get("channel");
-if (channelParam) {
-  TwitchChannel = channelParam.toLowerCase().split(",");
-} else {
-  console.error("No 'channel' parameter found in URL. Please add ?channel=yourchannel to the URL for live chat.");
-  TwitchChannel = ['yourdefaultchannel'];
-}
-
-// === Verbindung erstellen ===
-const client = new tmi.Client({
-  options: { debug: true },
-  channels: TwitchChannel
-});
+// === Verbindung erstellen (Wird erst in initializeGameCore verbunden) ===
+let client;
 
 // === Chatnamen speichern ===
 let chatUsers = new Set();
@@ -45,7 +35,9 @@ let ladderImg = new Image(); // Bild für Leitern
 let snakeImg = new Image(); // Bild für Schlangen
 
 // === Grafik-Sichtbarkeits-Modus ===
-let showGraphics = true;
+let showGraphics = true; // Dies ist der allgemeine Umschalter für Grafiken AN/AUS
+// NEU: Diese Variable speichert den gewählten Stil für das Brett (Glowy/Schlicht)
+let currentBoardStyle = 'glowy'; 
 
 let diceRollTimer; // Timer für den synchronen Würfelwurf
 
@@ -84,6 +76,45 @@ const laddersAndSnakes = [
 
 // Felder, auf denen Poker gespielt werden kann
 const POKER_FIELDS = [4, 28, 49, 53, 66, 88, 95];
+
+// === Bildquellen für Themes ===
+const IMAGE_SOURCES = {
+    sommer: {
+        character: 'character.png',
+        poker: 'poker.png',
+        end: 'end.png',
+        crown: 'crown.png',
+        portal: 'portal.png',
+        walk: 'walk.png',
+        poker_walk: 'poker_walk.png',
+        power_walk: 'power_walk.png',
+        lower_walk: 'lower_walk.png',
+        curve_right_up: 'curve_right-up.png',
+        curve_right_down: 'curve_right-down.png',
+        ladder: 'ladder.png',
+        snake: 'snake.png',
+        start: 'start.png',
+        finish: 'finish.png'
+    },
+    'christmas': {
+        // Placeholder paths for Christmas theme. You need to provide these image files.
+        character: 'winter_character.png',
+        poker: 'winter_poker.png',
+        end: 'winter_finish.png',
+        crown: 'winter_crown.png',
+        portal: 'winter_portal.png', // Reusing existing portal image for now
+        walk: 'winter_walk.png',
+        poker_walk: 'winter_poker_walk.png',
+        power_walk: 'winter_power_walk.png',
+        lower_walk: 'winter_lower_walk.png',
+        curve_right_up: 'winter_curve_right-up.png',
+        curve_right_down: 'winter_curve_right-down.png',
+        ladder: 'winter_ladder.png',
+        snake: 'winter_snake.png',
+        start: 'winter_start.png',
+        finish: 'winter_finish.png'
+    }
+};
 
 
 // === Hilfsfunktionen ===
@@ -143,6 +174,7 @@ function getFieldCoordinates(fieldNumber) {
   const boardPixelWidth = boardCols * FIELD_SIZE;
   const boardPixelHeight = boardRows * FIELD_SIZE;
 
+  // Hier wird die Zentrierung berechnet
   const startX = (canvas.width - boardPixelWidth) / 2;
   const startY = (canvas.height - boardPixelHeight) / 2;
 
@@ -384,21 +416,25 @@ let männchenListe = [];
 function loadImages(sources, callback) {
   let images = {};
   let loadedImages = 0;
-  let numImages = Object.keys(sources).length;
-  for (let src in sources) {
-    images[src] = new Image();
-    images[src].onload = () => {
+  // Use IMAGE_SOURCES[currentTheme] to get the correct set of image paths
+  const currentImageSet = IMAGE_SOURCES[currentTheme];
+  let numImages = Object.keys(currentImageSet).length;
+
+  for (let srcName in currentImageSet) {
+    const filePath = currentImageSet[srcName]; // Get the actual file path for the current theme
+    images[srcName] = new Image();
+    images[srcName].onload = () => {
       if (++loadedImages >= numImages) {
         callback(images);
       }
     };
-    images[src].onerror = () => {
-        console.error(`Fehler beim Laden von Bild: ${images[src].src}`);
+    images[srcName].onerror = () => {
+        console.error(`Fehler beim Laden von Bild: ${filePath}`);
         if (++loadedImages >= numImages) {
             callback(images);
         }
     };
-    images[src].src = sources[src];
+    images[srcName].src = filePath;
   }
   return images;
 }
@@ -421,7 +457,9 @@ const classicModeLogic = {
         console.log("Starte Klassischen Modus...");
         this.isGameRunning = true;
         // männchenListe wird nicht zurückgesetzt, damit Charaktere über Runden hinweg bestehen bleiben
-        currentTurnPlayerDisplay.textContent = 'Warten auf Charaktere...'; // Anpassung des Textes
+        if (currentTurnPlayerDisplay) { // Ensure element exists before setting text
+             currentTurnPlayerDisplay.textContent = 'Warten auf Charaktere...'; // Anpassung des Textes
+        }
         gameModeInfoDiv.style.display = 'block'; // Zeige UI an
         this.startTurnLoop(); // Starte den Würfel-Loop direkt
     },
@@ -435,7 +473,9 @@ const classicModeLogic = {
                 return;
             }
             // Alle aktiven Charaktere würfeln gleichzeitig
-            currentTurnPlayerDisplay.textContent = 'Würfeln für alle Charaktere...'; // Aktualisiere UI vor dem Würfeln
+            if (currentTurnPlayerDisplay) { // Ensure element exists
+                currentTurnPlayerDisplay.textContent = 'Würfeln für alle Charaktere...'; // Aktualisiere UI vor dem Würfeln
+            }
 
             männchenListe.forEach(char => {
                 // Charaktere, die sich bewegen, spielen Poker oder sind fertig, würfeln nicht
@@ -464,185 +504,264 @@ const classicModeLogic = {
     }
 };
 
+// Funktion zur Aktualisierung der Brettpositionen (für die Zentrierung)
+function updateBoardPositions() {
+    canvas.width = window.innerWidth;
+    canvas.height = window.innerHeight;
 
-function init() {
-  canvas = document.getElementById('brbCanvas');
-  ctx = canvas.getContext('2d');
-  canvas.width = window.innerWidth;
-  canvas.height = window.innerHeight;
+    const boardCols = 10;
+    const boardRows = 10;
+    const boardPixelWidth = boardCols * FIELD_SIZE;
+    const boardPixelHeight = boardRows * FIELD_SIZE;
+    const startX = (canvas.width - boardPixelWidth) / 2;
+    const startY = (canvas.height - boardPixelHeight) / 2;
+    const adjustment = (FIELD_SIZE - CHARACTER_SIZE) / 2;
 
-  const toggleGraphicsButton = document.getElementById('toggleGraphicsButton');
-  if (toggleGraphicsButton) {
-    toggleGraphicsButton.addEventListener('click', toggleGraphicsVisibility);
-    toggleGraphicsButton.textContent = showGraphics ? 'Grafiken verbergen' : 'Grafiken anzeigen';
-  }
+    for (let i = 0; i < boardFields.length; i++) {
+        const field = boardFields[i];
+        const charCoords = getFieldCoordinates(field.fieldNumber);
+        field.x = charCoords.x - adjustment;
+        field.y = charCoords.y - adjustment;
+    }
 
-  // === UI Elemente für den Klassischen Modus ===
-  gameModeInfoDiv = document.getElementById('gameModeInfo');
-  currentTurnPlayerDisplay = document.getElementById('currentTurnPlayer');
-
-
-  finishLine = getFieldCoordinates(100);
-  finishLine.width = FINISH_LINE_SIZE;
-  finishLine.height = FINISH_LINE_SIZE;
-
-  const boardCols = 10;
-  const boardRows = 10;
-  const boardPixelWidth = boardCols * FIELD_SIZE;
-  const boardPixelHeight = boardRows * FIELD_SIZE;
-  const startX = (canvas.width - boardPixelWidth) / 2;
-  const startY = (canvas.height - boardPixelHeight) / 2;
-  const adjustment = (FIELD_SIZE - CHARACTER_SIZE) / 2;
-
-  for (let i = 1; i <= 100; i++) {
-    const charCoords = getFieldCoordinates(i);
-    const fieldX = charCoords.x - adjustment;
-    const fieldY = charCoords.y - adjustment;
-    boardFields.push({
-      fieldNumber: i,
-      x: fieldX,
-      y: fieldY,
-      width: FIELD_SIZE,
-      height: FIELD_SIZE,
-      image: null,
-      mirrored: false
-    });
-  }
-
-  const imageSources = {
-    character: 'character.png',
-    poker: 'poker.png',
-    end: 'end.png',
-    crown: 'crown.png',
-    portal: 'portal.png',
-    walk: 'walk.png',
-    poker_walk: 'poker_walk.png',
-    power_walk: 'power_walk.png',
-    lower_walk: 'lower_walk.png',
-    curve_right_up: 'curve_right-up.png',
-    curve_right_down: 'curve_right-down.png',
-    ladder: 'ladder.png',
-    snake: 'snake.png',
-    start: 'start.png',
-    finish: 'finish.png'
-  };
-
-  fieldImages = loadImages(imageSources, images => {
-    characterImg.src = images.character.src;
-    pokerImg.src = images.poker.src;
-    endImg.src = images.end.src;
-    crownImg.src = images.crown.src;
-    portalImg.src = images.portal.src;
-    ladderImg = images.ladder;
-    snakeImg = images.snake;
-
-    const pokerWalkFields = [4, 19, 23, 28, 49, 53, 66, 71, 88, 95];
-    const powerWalkFields = [100, 19, 9];
-    const lowerWalkFields = [75, 69, 51];
-    const curveRightUpFields = [10, 30, 50, 70, 90];
-    const curveRightDownFields = [11, 31, 51, 71, 91];
-    const mirroredCurveRightUpFields = [20, 40, 60, 80];
-    const mirroredCurveRightDownFields = [21, 41, 61, 81];
-    const fieldsToToggleMirror = [75, 69, 19];
-
-
-    boardFields.forEach(field => {
-        const rowFromBottom = Math.ceil(field.fieldNumber / boardCols);
-        const isRightToLeftRow = rowFromBottom % 2 === 0;
-
-        field.mirrored = isRightToLeftRow;
-
-        if (fieldsToToggleMirror.includes(field.fieldNumber)) {
-            field.mirrored = !field.mirrored;
+    // Auch die Positionen der Männchen aktualisieren
+    männchenListe.forEach(char => {
+        const coords = getFieldCoordinates(char.currentField);
+        char.x = coords.x;
+        char.y = coords.y;
+        // Wenn der Charakter sich bewegt, muss auch sein animationMoveTarget aktualisiert werden
+        if (char.isMoving) {
+            const currentPathTargetCoords = getFieldCoordinates(char.animationPath[char.currentPathIndex]);
+            char.animationMoveTarget.x = currentPathTargetCoords.x;
+            char.animationMoveTarget.y = currentPathTargetCoords.y;
         }
-
-        let assignedImage = images.walk;
-
-        if (pokerWalkFields.includes(field.fieldNumber)) {
-            assignedImage = images.poker_walk;
-        }
-        if (powerWalkFields.includes(field.fieldNumber)) {
-            assignedImage = images.power_walk;
-        }
-        if (lowerWalkFields.includes(field.fieldNumber)) {
-            assignedImage = images.lower_walk;
-        }
-
-        if (curveRightUpFields.includes(field.fieldNumber)) {
-            assignedImage = images.curve_right_up;
-            field.mirrored = false;
-        }
-        if (curveRightDownFields.includes(field.fieldNumber)) {
-            assignedImage = images.curve_right_down;
-            field.mirrored = false;
-        }
-        if (mirroredCurveRightUpFields.includes(field.fieldNumber)) {
-            assignedImage = images.curve_right_up;
-            field.mirrored = true;
-        }
-        if (mirroredCurveRightDownFields.includes(field.fieldNumber)) {
-            assignedImage = images.curve_right_down;
-            field.mirrored = true;
-        }
-
-        if (field.fieldNumber === 1) {
-            assignedImage = images.start;
-            field.mirrored = false;
-        }
-        if (field.fieldNumber === 100) {
-            assignedImage = images.finish;
-            field.mirrored = false;
-        }
-        // Feld 9 drehen, falls es nicht schon durch andere Logik richtig ist.
-        if (field.fieldNumber === 9) {
-            field.mirrored = true;
-        }
-
-
-        field.image = assignedImage;
     });
 
-    animate();
-    const savedScoreboard = localStorage.getItem('characterScoreboard');
-    if (savedScoreboard) scoreboard = JSON.parse(savedScoreboard);
-    const savedFinished = localStorage.getItem('finishedCharacters');
-    if (savedFinished) finishedCharacters = JSON.parse(savedFinished);
-
-    // Starte den Klassischen Modus beim Laden
-    classicModeLogic.startGame();
-
-    client.connect().then(() => console.log(`🤖 Bot ist verbunden mit ${TwitchChannel}`)).catch(console.error);
-    updateScoreboardDisplay(); // Initial einmal aufrufen
-  });
-
+    // finishLine Koordinaten ebenfalls aktualisieren
+    finishLine = getFieldCoordinates(100);
+    finishLine.width = FINISH_LINE_SIZE;
+    finishLine.height = FINISH_LINE_SIZE;
 }
 
-client.on('chat', (channel, userstate, message, self) => {
-  if (self) return;
-  const displayName = userstate['display-name'];
-  chatUsers.add(displayName);
-  const existingCharacter = männchenListe.find(m => m.name === displayName);
-  if (existingCharacter) {
-    existingCharacter.lastChatTime = Date.now();
-    return;
-  }
-  const alreadyFinished = finishedCharacters.includes(displayName);
+// === Kerninitialisierung des Spiels (wird nach Menü-Auswahl aufgerufen) ===
+function initializeGameCore() {
+    // Initial die Positionen berechnen und das Canvas anpassen
+    updateBoardPositions();
 
-  if (!alreadyFinished) {
-      // Keine maximale Spieleranzahl mehr
-      const newCharacter = new Männchen(1, displayName);
-      newCharacter.lastChatTime = Date.now();
-      newCharacter.nameColor = getRandomColor();
-      newCharacter.spawnProtectionUntil = Date.now() + SPAWN_PROTECTION_DURATION;
-      newCharacter.startTime = Date.now();
-      männchenListe.push(newCharacter);
-      activeMaleNames.add(displayName); // Als aktiv markieren
-      console.log(`[Klassischer Modus] Neuer Charakter für ${displayName} gespawnt. Gesamt: ${männchenListe.length}`);
-      updateScoreboardDisplay(); // Hier sofort aktualisieren
-  } else {
-      console.log(`Charakter ${displayName} hat das Ziel bereits erreicht und kann nicht erneut spawnen.`);
-  }
-});
+    // Event-Listener für Fenstergrößenänderung hinzufügen
+    window.addEventListener('resize', updateBoardPositions);
+
+    // Initialisiere currentTurnPlayerDisplay
+    currentTurnPlayerDisplay = document.getElementById('currentTurnPlayer');
+
+    // Das Spielfeld einmalig initialisieren mit allen Feldern (ohne x/y, die kommen von updateBoardPositions)
+    const boardCols = 10;
+    const boardRows = 10;
+    const boardPixelWidth = boardCols * FIELD_SIZE;
+    const boardPixelHeight = boardRows * FIELD_SIZE;
+    const startX = (canvas.width - boardPixelWidth) / 2;
+    const startY = (canvas.height - boardPixelHeight) / 2;
+    const adjustment = (FIELD_SIZE - CHARACTER_SIZE) / 2; // = 10
+
+    for (let i = 1; i <= 100; i++) {
+      boardFields.push({
+        fieldNumber: i,
+        x: 0, // Werden später in updateBoardPositions() gesetzt
+        y: 0, // Werden später in updateBoardPositions() gesetzt
+        width: FIELD_SIZE,
+        height: FIELD_SIZE,
+        image: null,
+        mirrored: false
+      });
+    }
+    // Da boardFields bereits initialisiert ist, kann updateBoardPositions() direkt darauf zugreifen
+    updateBoardPositions();
+
+
+    loadImages(IMAGE_SOURCES[currentTheme], images => { // Verwende das ausgewählte Theme
+      characterImg.src = images.character.src;
+      pokerImg.src = images.poker.src;
+      endImg.src = images.end.src;
+      crownImg.src = images.crown.src;
+      portalImg.src = images.portal.src;
+      ladderImg = images.ladder;
+      snakeImg = images.snake;
+
+      const pokerWalkFields = [4, 19, 23, 28, 49, 53, 66, 71, 88, 95];
+      const powerWalkFields = [100, 19, 9];
+      const lowerWalkFields = [75, 69, 51];
+      const curveRightUpFields = [10, 30, 50, 70, 90];
+      const curveRightDownFields = [11, 31, 51, 71, 91];
+      const mirroredCurveRightUpFields = [20, 40, 60, 80];
+      const mirroredCurveRightDownFields = [21, 41, 61, 81];
+      const fieldsToToggleMirror = [75, 69, 19];
+
+
+      boardFields.forEach(field => {
+          const rowFromBottom = Math.ceil(field.fieldNumber / boardCols);
+          const isRightToLeftRow = rowFromBottom % 2 === 0;
+
+          field.mirrored = isRightToLeftRow;
+
+          if (fieldsToToggleMirror.includes(field.fieldNumber)) {
+              field.mirrored = !field.mirrored;
+          }
+
+          let assignedImage = images.walk;
+
+          if (pokerWalkFields.includes(field.fieldNumber)) {
+              assignedImage = images.poker_walk;
+          }
+          if (powerWalkFields.includes(field.fieldNumber)) {
+              assignedImage = images.power_walk;
+          }
+          if (lowerWalkFields.includes(field.fieldNumber)) {
+              assignedImage = images.lower_walk;
+          }
+
+          if (curveRightUpFields.includes(field.fieldNumber)) {
+              assignedImage = images.curve_right_up;
+              field.mirrored = false;
+          }
+          if (curveRightDownFields.includes(field.fieldNumber)) {
+              assignedImage = images.curve_right_down;
+              field.mirrored = false;
+          }
+          if (mirroredCurveRightUpFields.includes(field.fieldNumber)) {
+              assignedImage = images.curve_right_up;
+              field.mirrored = true;
+          }
+          if (mirroredCurveRightDownFields.includes(field.fieldNumber)) {
+              assignedImage = images.curve_right_down;
+              field.mirrored = true;
+          }
+
+          if (field.fieldNumber === 1) {
+              assignedImage = images.start;
+              field.mirrored = false;
+          }
+          if (field.fieldNumber === 100) {
+              assignedImage = images.finish;
+              field.mirrored = false;
+          }
+          // Feld 9 drehen, falls es nicht schon durch andere Logik richtig ist.
+          if (field.fieldNumber === 9) {
+              field.mirrored = true;
+          }
+
+
+          field.image = assignedImage;
+      });
+
+      animate(); // Start the animation loop
+      const savedScoreboard = localStorage.getItem('characterScoreboard');
+      if (savedScoreboard) scoreboard = JSON.parse(savedScoreboard);
+      const savedFinished = localStorage.getItem('finishedCharacters');
+      if (savedFinished) finishedCharacters = JSON.parse(savedFinished);
+
+      // Starte den Klassischen Modus beim Laden
+      classicModeLogic.startGame();
+
+      // Initialisiere und verbinde den Twitch-Client
+      client = new tmi.Client({
+        options: { debug: true },
+        channels: TwitchChannel
+      });
+      client.connect().then(() => {
+        console.log(`🤖 Bot ist verbunden mit ${TwitchChannel}`);
+        // !!! WICHTIG: Der 'chat'-Listener ist JETZT HIER RICHTIG PLATZIERT !!!
+        client.on('chat', (channel, userstate, message, self) => {
+          if (self) return;
+          const displayName = userstate['display-name'];
+          chatUsers.add(displayName);
+          const existingCharacter = männchenListe.find(m => m.name === displayName);
+          if (existingCharacter) {
+            existingCharacter.lastChatTime = Date.now();
+            return;
+          }
+          const alreadyFinished = finishedCharacters.includes(displayName);
+
+          if (!alreadyFinished) {
+              // Keine maximale Spieleranzahl mehr
+              const newCharacter = new Männchen(1, displayName);
+              newCharacter.lastChatTime = Date.now();
+              newCharacter.nameColor = getRandomColor();
+              newCharacter.spawnProtectionUntil = Date.now() + SPAWN_PROTECTION_DURATION;
+              newCharacter.startTime = Date.now();
+              männchenListe.push(newCharacter);
+              activeMaleNames.add(displayName); // Als aktiv markieren
+              console.log(`[Klassischer Modus] Neuer Charakter für ${displayName} gespawnt. Gesamt: ${männchenListe.length}`);
+              updateScoreboardDisplay(); // Hier sofort aktualisieren
+          } else {
+              console.log(`Charakter ${displayName} hat das Ziel bereits erreicht und kann nicht erneut spawnen.`);
+          }
+        });
+      }).catch(console.error);
+
+      updateScoreboardDisplay(); // Initial einmal aufrufen
+    });
+}
+
+console.log("Versuche, init() zu definieren...");
+function init() {
+    console.log("init() wurde aufgerufen!");
+    canvas = document.getElementById('brbCanvas');
+    ctx = canvas.getContext('2d');
+
+    // Event Listener für Board-Stil Radio-Buttons
+    const glowyStyleRadio = document.getElementById('glowyStyle');
+    const schlichtStyleRadio = document.getElementById('schlichtStyle');
+
+    function updateBoardAndUIStyle() {
+        // Update the global currentBoardStyle variable
+        if (glowyStyleRadio.checked) {
+            currentBoardStyle = 'glowy';
+        } else if (schlichtStyleRadio.checked) {
+            currentBoardStyle = 'schlicht';
+        }
+
+        // Apply/remove a CSS class to the body for global styling control
+        if (currentBoardStyle === 'schlicht') {
+            document.body.classList.add('schlicht-design-active');
+        } else {
+            document.body.classList.remove('schlicht-design-active');
+        }
+        console.log(`Board Style set to: ${currentBoardStyle}`);
+    }
+
+    // Initial call to set the style based on default checked radio button
+    updateBoardAndUIStyle();
+
+    glowyStyleRadio.addEventListener('change', updateBoardAndUIStyle);
+    schlichtStyleRadio.addEventListener('change', updateBoardAndUIStyle);
+
+    // Get the start game button and set up its click listener
+    const startGameButton = document.getElementById('startGameButton');
+    if (startGameButton) {
+        startGameButton.addEventListener('click', () => {
+            const channelNameInput = document.getElementById('channelNameInput');
+            TwitchChannel = channelNameInput.value;
+
+            // Get selected theme
+            const sommerThemeRadio = document.getElementById('sommerTheme');
+            const christmasThemeRadio = document.getElementById('christmasTheme');
+            if (sommerThemeRadio.checked) {
+                currentTheme = 'sommer';
+            } else if (christmasThemeRadio.checked) {
+                currentTheme = 'christmas';
+            }
+
+            // Hide main menu, show canvas and game info
+            document.getElementById('mainMenu').style.display = 'none';
+            canvas.style.display = 'block';
+            document.getElementById('gameModeInfo').style.display = 'block';
+            document.getElementById('scoreboard').style.display = 'block';
+
+            initializeGameCore(); // Start the game core after settings are applied
+        });
+    }
+}
+
 
 function checkCharacterCollision(a, b) {
   if (a === b || Date.now() < a.interactionCooldownUntil || Date.now() < b.interactionCooldownUntil) return false;
@@ -745,57 +864,92 @@ function animate() {
   ctx.globalAlpha = 1.0;
 
   boardFields.forEach(field => {
-    if (showGraphics) {
-      if (field.image) {
-        ctx.save();
-        let drawX = field.x;
-        let drawY = field.y;
+    // Zeichne das Spielfeld abhängig vom gewählten Board-Stil (currentBoardStyle)
+    if (showGraphics) { // Wenn Grafiken generell aktiviert sind (Glowy ODER Schlichtes Design)
+      if (currentBoardStyle === 'glowy') { // "Glowy" Design für Felder (mit Bildern, kein Filter)
+        ctx.filter = 'none'; // Sicherstellen, dass kein Filter angewendet wird
 
-        if (field.mirrored) {
-          ctx.translate(drawX + field.width, drawY);
-          ctx.scale(-1, 1);
-          drawX = 0;
-          drawY = 0;
+        if (field.image) {
+          ctx.save();
+          let drawX = field.x;
+          let drawY = field.y;
+
+          if (field.mirrored) {
+            ctx.translate(drawX + field.width, drawY);
+            ctx.scale(-1, 1);
+            drawX = 0;
+            drawY = 0;
+          }
+
+          ctx.drawImage(field.image, drawX, drawY, field.width, field.height);
+          ctx.restore();
+        } else {
+          // Fallback, falls ein Bild fehlt, aber showGraphics true und glowyStyle
+          ctx.fillStyle = '#CCCCCC';
+          ctx.fillRect(field.x, field.y, field.width, field.height);
+          ctx.strokeStyle = '#666666';
+          ctx.lineWidth = 1;
+          ctx.strokeRect(field.x, field.y, field.width, field.height);
         }
 
-        ctx.drawImage(field.image, drawX, drawY, field.width, field.height);
-        ctx.restore();
-      } else {
-        ctx.fillStyle = '#CCCCCC';
-        ctx.fillRect(field.x, field.y, field.width, field.height);
-        ctx.strokeStyle = '#666666';
-        ctx.lineWidth = 1;
-        ctx.strokeRect(field.x, field.y, field.width, field.height);
+        // Feldnummern auf Glowy-Feldern (oft dunkel für Kontrast)
         ctx.fillStyle = '#000000';
-        ctx.font = '12px Arial';
+        ctx.font = 'bold 14px Arial';
+        ctx.textAlign = 'center';
+        ctx.textBaseline = 'middle';
+        ctx.fillText(field.fieldNumber, field.x + field.width / 2, field.y + field.height / 2);
+
+      } else if (currentBoardStyle === 'schlicht') { // "Schlichtes" Design für Felder (gleiche Bilder, aber gefiltert)
+        // BEHALTEN: Vollständige Entsättigung, um ursprüngliche Neonfarben zu eliminieren, aber die Intensität beibehalten.
+        ctx.filter = 'grayscale(100%) brightness(0.5) contrast(1.5)';
+
+        if (field.image) {
+            ctx.save();
+            let drawX = field.x;
+            let drawY = field.y;
+
+            if (field.mirrored) {
+                ctx.translate(drawX + field.width, drawY);
+                ctx.scale(-1, 1);
+                drawX = 0;
+                drawY = 0;
+            }
+            ctx.drawImage(field.image, drawX, drawY, field.width, field.height);
+            ctx.restore();
+        } else {
+            // Fallback für fehlendes Bild im 'schlicht'-Modus
+            ctx.fillStyle = '#AAAAAA';
+            ctx.fillRect(field.x, field.y, field.width, field.height);
+            ctx.strokeStyle = '#666666';
+            ctx.lineWidth = 1;
+            ctx.strokeRect(field.x, field.y, field.width, field.height);
+        }
+        ctx.filter = 'none'; // WICHTIG: Filter nach dem Zeichnen des Feld-Bildes zurücksetzen, damit andere Elemente unbeeinflusst bleiben
+
+        // Feldnummern zeichnen (heller für Kontrast auf gefilterten Bildern)
+        ctx.fillStyle = '#EEEEEE'; // Hellerer Text für Nummern
+        ctx.font = 'bold 16px Arial';
         ctx.textAlign = 'center';
         ctx.textBaseline = 'middle';
         ctx.fillText(field.fieldNumber, field.x + field.width / 2, field.y + field.height / 2);
       }
-
-      ctx.fillStyle = '#000000';
-      ctx.font = 'bold 14px Arial';
-      ctx.textAlign = 'center';
-      ctx.textBaseline = 'middle';
-      ctx.fillText(field.fieldNumber, field.x + field.width / 2, field.y + field.height / 2);
-
-
-    } else {
+    } else { // Wenn Grafiken generell AUS sind (der sehr einfache, bildlose Modus, gesteuert durch den Toggle-Button)
+      ctx.filter = 'none'; // Sicherstellen, dass hier auch kein Filter angewendet wird
       const isActionField = laddersAndSnakes.some(effect =>
         (effect.type === 'power' || effect.type === 'lower') && effect.start === field.fieldNumber
       );
 
       if (isActionField) {
-        ctx.fillStyle = '#FFFF00';
+        ctx.fillStyle = '#FFFF00'; // Gelb für Power/Lower Felder
       } else {
-        ctx.fillStyle = '#333333';
+        ctx.fillStyle = '#333333'; // Dunkelgrau für normale Felder
       }
 
       ctx.fillRect(field.x, field.y, field.width, field.height);
-      ctx.strokeStyle = '#999999';
+      ctx.strokeStyle = '#999999'; // Hellerer Rand
       ctx.lineWidth = 1;
       ctx.strokeRect(field.x, field.y, field.width, field.height);
-      ctx.fillStyle = '#FFFFFF';
+      ctx.fillStyle = '#FFFFFF'; // Weiße Feldnummern
       ctx.font = 'bold 16px Arial';
       ctx.textAlign = 'center';
       ctx.textBaseline = 'middle';
@@ -803,8 +957,11 @@ function animate() {
     }
   });
 
+  // Leitern, Schlangen, Charaktere, Poker-Bild sollen IMMER mit ihren Bildern gerendert werden,
+  // wenn showGraphics true ist (egal ob Glowy oder Schlicht als Brett-Stil gewählt wurde).
+  // Da ctx.filter = 'none' nach dem Zeichnen jedes Feldes zurückgesetzt wird, sind diese Elemente nicht betroffen.
   if (showGraphics) {
-      // === Zeichne Leitern und Schlangen ===
+      // === Zeichne Leitern und Schlangen als Bilder ===
       laddersAndSnakes.forEach(effect => {
         if ((effect.type === 'ladder' || effect.type === 'snake') && (ladderImg.complete && ladderImg.naturalWidth > 0) && (snakeImg.complete && snakeImg.naturalWidth > 0)) {
 
@@ -813,7 +970,6 @@ function animate() {
                 const startCoordsChar = getFieldCoordinates(effect.start);
                 const endCoordsChar = getFieldCoordinates(effect.end);
 
-                // Zentren der Felder für die Linie
                 const startX = startCoordsChar.x + CHARACTER_SIZE / 2;
                 const startY = startCoordsChar.y + CHARACTER_SIZE / 2;
                 const endX = endCoordsChar.x + CHARACTER_SIZE / 2;
@@ -823,33 +979,22 @@ function animate() {
                 const dy = endY - startY;
 
                 const length = Math.sqrt(dx * dx + dy * dy);
-                const angle = Math.atan2(dy, dx); // Angle of the line relative to the x-axis
+                const angle = Math.atan2(dy, dx);
 
                 const actualImageToDraw = (effect.type === 'ladder') ? ladderImg : snakeImg;
-
-                // Adjust rotation for images that are vertically oriented by default
-                // If your images are oriented along their height (top to bottom is length)
-                // and you want them to align with the line's angle, you often need to subtract 90 degrees (PI/2 radians).
-                const rotationAngle = angle - Math.PI / 2;
-
-                // Scale the image based on its natural height to fit the calculated length
-                const scaledWidth = actualImageToDraw.naturalWidth * (length / actualImageToDraw.naturalHeight);
+                const rotationAngle = angle - Math.PI / 2; // Passend für vertikale Bilder
 
                 ctx.save();
-                ctx.translate(startX, startY); // Move origin to the start of the line
-                ctx.rotate(rotationAngle); // Rotate by the adjusted angle
-
-                // Draw the image:
-                // -scaledWidth / 2 : Centers the image horizontally relative to the rotated y-axis
-                // 0                : Places the top of the image at the origin (startX, startY in original coords)
-                // scaledWidth      : The scaled width of the image
-                // length           : The length of the line (which becomes the height of the image)
-                ctx.drawImage(actualImageToDraw, -scaledWidth / 2, 0, scaledWidth, length);
+                ctx.translate(startX, startY);
+                ctx.rotate(rotationAngle);
+                ctx.drawImage(actualImageToDraw, -actualImageToDraw.naturalWidth / 2, 0, actualImageToDraw.naturalWidth, length);
                 ctx.restore();
             }
         }
       });
   } else {
+    // === Zeichne Leitern und Schlangen im "komplett-schlicht"-Modus als einfache Linien ===
+    // Dieser Teil läuft nur, wenn showGraphics FALSE ist (vom Toggle-Button)
     ctx.lineWidth = 3;
     laddersAndSnakes.forEach(effect => {
       if (effect.type === 'ladder' || effect.type === 'snake') {
@@ -867,9 +1012,9 @@ function animate() {
           ctx.lineTo(endX, endY);
 
           if (effect.end > effect.start) {
-            ctx.strokeStyle = '#FFFF00';
+            ctx.strokeStyle = '#00FF00'; // Grün für Leitern
           } else {
-            ctx.strokeStyle = '#FF0000';
+            ctx.strokeStyle = '#FF0000'; // Rot für Schlangen
           }
           ctx.stroke();
         }
@@ -877,13 +1022,11 @@ function animate() {
     });
   }
 
-  // === Charaktere werden animiert ===
+  // === Charaktere werden animiert === (werden immer gezeichnet, wenn ihr Zustand 'alive' ist)
   for (let i = männchenListe.length - 1; i >= 0; i--) {
     const char = männchenListe[i];
     char.updateAnimation();
-    if (showGraphics) {
-        char.draw();
-    }
+    char.draw(); // Charaktere werden immer gezeichnet, unabhängig vom Board-Stil
 
     // Kollisionserkennung und Ziel-Erkennung
     if (char.state === 'alive' && !char.isMoving) { // Nur prüfen, wenn Charakter nicht gerade in Bewegung ist
@@ -915,4 +1058,5 @@ function animate() {
   requestAnimationFrame(animate);
 }
 
+console.log("Weise window.onload zu init zu...");
 window.onload = init;
