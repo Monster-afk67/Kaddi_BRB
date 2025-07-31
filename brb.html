@@ -5,13 +5,14 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Twitch Brettspiel</title>
     <link href="https://fonts.googleapis.com/css2?family=Orbitron:wght@400;700&family=Press+Start+2P&display=swap" rel="stylesheet">
-    <link rel="stylesheet" href="style.css">
+    <link rel="stylesheet" href="style.css"> 
 </head>
 <body>
-    <div id="mainMenu" style="display: block;"> <h2>Spiel starten</h2>
+    <div id="mainMenu">
+        <h2>Spiel starten</h2>
         <label for="channelNameInput">Twitch Channel:</label>
         <input type="text" id="channelNameInput" placeholder="Dein Twitch Channel">
-
+        
         <div class="theme-selection">
             <input type="radio" id="sommerTheme" name="theme" value="sommer" checked>
             <label for="sommerTheme">Sommer Theme</label>
@@ -21,23 +22,31 @@
 
         <div class="board-style-selection">
             <input type="radio" id="glowyStyle" name="boardStyle" value="glowy" checked>
-            <label for="glowyStyle">Glowy Design</label>
-            <input type="radio" id="schlichtStyle" name="boardStyle" value="schlicht">
-            <label for="schlichtStyle">Schlichtes Design</label>
+            <label for="glowyStyle">NormalesDesign</label>
+            <!-- <input type="radio" id="schlichtStyle" name="boardStyle" value="schlicht">
+            <label for="schlichtStyle">Schlichtes Design</label> -->
         </div>
-
+        
         <button id="startGameButton">Spiel starten</button>
+
+        <div id="credits" style="font-size: 0.7em; color: #aaa; margin-top: 10px;">
+            Developed by Maulwurf
+        </div>
     </div>
 
-    <canvas id="brbCanvas" style="display: none;"></canvas> <div id="gameModeInfo" class="game-info" style="display: none;"> <p>Aktueller Spieler: <span id="currentTurnPlayer"></span></p>
+    <canvas id="brbCanvas" style="display: none;"></canvas>
+
+    <div id="gameModeInfo" class="game-info" style="display: none;">
+        <p>Aktueller Spieler: <span id="currentTurnPlayer"></span></p>
     </div>
 
-    <div id="scoreboard" style="display: none;"> <h3>Scoreboard</h3>
+    <div id="scoreboard" style="display: none;">
+        <h3>Scoreboard</h3>
         <ul id="score-list">
-        </ul>
+            </ul>
     </div>
 
-    <button id="toggleGraphicsButton" style="display: none;"></button> <script src="tmi.js"></script>
-    <script src="chat.js"></script>
+    <script src="tmi.js"></script>
+    <script src="chat.js"></script> 
 </body>
 </html>
