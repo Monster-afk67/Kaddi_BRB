@@ -1,94 +1,43 @@
 <!DOCTYPE html>
 <html lang="de">
 <head>
-  <meta charset="UTF-8">
-  <title>BRB-Screen</title>
-  <style>
-    body {
-      margin: 0;
-      overflow: hidden;
-      background-color: #222;
-      font-family: Arial, sans-serif;
-      color: white;
-    }
-    canvas {
-      display: block;
-      position: absolute;
-      z-index: 1;
-    }
-    #ui-container {
-      position: absolute;
-      top: 0;
-      left: 0;
-      width: 100%;
-      height: 100%;
-      z-index: 2;
-      pointer-events: none; /* Allows mouse events to pass through to elements below */
-      /* Removed flexbox properties as only one main UI element on the left */
-    }
-    .ui-box {
-      background-color: rgba(0, 0, 0, 0.7);
-      padding: 10px;
-      border-radius: 5px;
-      box-shadow: 0 0 10px rgba(0, 0, 0, 0.5);
-      pointer-events: auto; /* Allow interaction with these specific boxes */
-      margin: 20px; /* General margin for UI boxes */
-    }
-    
-    /* === Positionierung des Scoreboards === */
-    #scoreboard-container {
-      position: absolute; /* Absolute Positionierung */
-      top: 30px; /* 20px Abstand vom oberen Rand */
-      left: 1px; /* 20px Abstand vom linken Rand */
-      width: 275px; /* Angepasste Breite */
-    }
-
-    /* Entfernte #action-log-container und #finish-scoreboard-container */
-
-    .ui-box h2 {
-      margin-top: 0;
-      font-size: 1.2em;
-      border-bottom: 1px solid #444;
-      padding-bottom: 5px;
-      margin-bottom: 10px;
-    }
-    #toggleGraphicsButton {
-      position: absolute;
-      bottom: 20px;
-      left: 50%;
-      transform: translateX(-50%);
-      z-index: 3;
-      pointer-events: auto;
-      background-color: #007bff;
-      color: white;
-      padding: 10px 15px;
-      border: none;
-      border-radius: 5px;
-      cursor: pointer;
-      font-size: 1em;
-    }
-    #toggleGraphicsButton:hover {
-      background-color: #0056b3;
-    }
-  </style>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Twitch Brettspiel</title>
+    <link href="https://fonts.googleapis.com/css2?family=Orbitron:wght@400;700&family=Press+Start+2P&display=swap" rel="stylesheet">
+    <link rel="stylesheet" href="style.css">
 </head>
 <body>
-  <canvas id="brbCanvas"></canvas>
+    <div id="mainMenu" style="display: block;"> <h2>Spiel starten</h2>
+        <label for="channelNameInput">Twitch Channel:</label>
+        <input type="text" id="channelNameInput" placeholder="Dein Twitch Channel">
 
-  <div id="ui-container">
-    <div id="scoreboard-container" class="ui-box">
-      <h2>Aktive Spieler</h2>
-      <ul id="score-list">
+        <div class="theme-selection">
+            <input type="radio" id="sommerTheme" name="theme" value="sommer" checked>
+            <label for="sommerTheme">Sommer Theme</label>
+            <input type="radio" id="christmasTheme" name="theme" value="christmas">
+            <label for="christmasTheme">Christmas Theme</label>
+        </div>
+
+        <div class="board-style-selection">
+            <input type="radio" id="glowyStyle" name="boardStyle" value="glowy" checked>
+            <label for="glowyStyle">Glowy Design</label>
+            <input type="radio" id="schlichtStyle" name="boardStyle" value="schlicht">
+            <label for="schlichtStyle">Schlichtes Design</label>
+        </div>
+
+        <button id="startGameButton">Spiel starten</button>
+    </div>
+
+    <canvas id="brbCanvas" style="display: none;"></canvas> <div id="gameModeInfo" class="game-info" style="display: none;"> <p>Aktueller Spieler: <span id="currentTurnPlayer"></span></p>
+    </div>
+
+    <div id="scoreboard" style="display: none;"> <h3>Scoreboard</h3>
+        <ul id="score-list">
         </ul>
     </div>
-  </div>
 
-
-<!-- Nur für die Entwicklung notwendig / nützlich:-->
-  <!-- <button id="modeToggleButton" style="position: absolute; bottom: 10px; right: 10px; z-index: 100;">Crowd-Modus</button> -->
-  <!--<button id="toggleGraphicsButton">Grafiken verbergen</button> -->
-
-  <script src="tmi.js"></script>
-  <script src="chat.js"></script>
+    <button id="toggleGraphicsButton" style="display: none;"></button> <script src="tmi.js"></script>
+    <script src="chat.js"></script>
 </body>
 </html>
