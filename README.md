@@ -20,15 +20,15 @@ Aktionen (Pokern / Portal): 25x25
 
 # Aktionsfelder
 
-Leitern: 4 -> 24, 21 -> 42, 9 -> 30, 58 -> 81, 73 -> 92
+- Leitern: 4 -> 24, 21 -> 42, 9 -> 30, 58 -> 81, 73 -> 92
 
-Schlangen: 16 -> 6, 62 -> 18, 47 -> 26, 98 -> 77
+- Schlangen: 16 -> 6, 62 -> 18, 47 -> 26, 98 -> 77
 
-Pokern: 4, 28, 49, 53, 66, 88, 95
+- Pokern: 4, 28, 49, 53, 66, 88, 95
 
-lower_walk: 9, 19
+- lower_walk: 9, 19
 
-power_walk: 69, 75
+- power_walk: 69, 75
 
 
 # Funktionen im chat.js Skript
