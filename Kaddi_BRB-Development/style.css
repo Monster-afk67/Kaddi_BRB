@@ -1,0 +1,277 @@
+body {
+    margin: 0;
+    overflow: hidden; /* Verhindert Scrollbalken */
+    font-family: 'Orbitron', Arial, sans-serif; /* Oder eine andere Cyberpunk-Schriftart, falls geladen */
+    background-color: #121212; /* Sehr dunkler Hintergrund für Cyberpunk-Stimmung */
+    color: #00ffcc; /* Neon-Grün als Standard-Textfarbe */
+    display: flex;
+    justify-content: center;
+    align-items: center;
+    min-height: 100vh;
+}
+
+canvas {
+    display: block; /* Stellt sicher, dass das Canvas ein Blockelement ist */
+    background-color: #2a2a2a; /* Hintergrundfarbe für das Spielbrett */
+    /* Das Canvas wird seine Größe durch JS erhalten, aber diese Farbe ist ein Fallback */
+}
+
+/* === Modernes/Cyberpunk Menü-Styles === */
+#mainMenu {
+    background-color: rgba(10, 10, 10, 0.95); /* Fast schwarz, leicht transparent */
+    padding: 40px;
+    border-radius: 15px; /* Leicht abgerundete Ecken */
+    box-shadow: 0 0 30px rgba(0, 255, 204, 0.6), /* Neon-Schatten */
+                0 0 10px rgba(0, 255, 204, 0.8) inset; /* Innerer Glüheffekt */
+    text-align: center;
+    display: flex; /* Stellt sicher, dass es ein Flex-Container ist, wenn sichtbar */
+    flex-direction: column;
+    align-items: center;
+    gap: 25px; /* Mehr Abstand zwischen den Elementen */
+    border: 2px solid #00cc99; /* Neon-Grüner Rahmen */
+    transition: all 0.3s ease-in-out; /* Sanfter Übergang für Hover-Effekte */
+}
+
+#mainMenu:hover {
+    box-shadow: 0 0 45px rgba(0, 255, 204, 0.8),
+                0 0 15px rgba(0, 255, 204, 1) inset;
+    border-color: #00ffcc;
+}
+
+#mainMenu h2 {
+    color: #e0e0e0; /* Helleres Grau für die Überschrift */
+    margin-bottom: 25px;
+    font-size: 2.2em; /* Größerer Titel */
+    text-shadow: 0 0 10px rgba(0, 255, 204, 0.8); /* Leuchtender Textschatten */
+}
+
+#mainMenu label {
+    font-size: 1.2em;
+    margin-bottom: 8px;
+    color: #aaffdd; /* Helleres Neon-Grün */
+}
+
+#mainMenu input[type="text"] {
+    padding: 12px;
+    border: 1px solid #008877; /* Dunkleres Neon-Grün */
+    border-radius: 8px; /* Leicht abgerundet */
+    background-color: #2a2a2a; /* Dunklerer Hintergrund */
+    color: #00ffcc; /* Neon-Grün als Eingabetext */
+    width: 300px; /* Breiteres Eingabefeld */
+    font-size: 1.1em;
+    box-shadow: 0 0 5px rgba(0, 255, 204, 0.5); /* Leichter innerer Schatten */
+    transition: border-color 0.3s ease, box-shadow 0.3s ease;
+}
+
+#mainMenu input[type="text"]:focus {
+    border-color: #00ffcc; /* Rahmen leuchtet beim Fokus */
+    box-shadow: 0 0 15px rgba(0, 255, 204, 0.8);
+    outline: none; /* Standard-Outline entfernen */
+}
+
+#mainMenu .theme-selection {
+    margin-top: 15px;
+    display: flex;
+    gap: 30px; /* Mehr Abstand zwischen den Radio-Buttons */
+}
+
+#mainMenu .theme-selection label {
+    cursor: pointer;
+    position: relative;
+    padding-left: 25px; /* Platz für benutzerdefinierten Radio-Button */
+}
+
+/* Benutzerdefinierte Radio-Buttons für Theme-Auswahl */
+#mainMenu .theme-selection input[type="radio"] {
+    opacity: 0; /* Original-Radio-Button verstecken */
+    position: absolute;
+}
+
+#mainMenu .theme-selection label::before {
+    content: '';
+    position: absolute;
+    left: 0;
+    top: 50%;
+    transform: translateY(-50%);
+    width: 18px;
+    height: 18px;
+    border: 2px solid #00cc99; /* Rahmen für den Radio-Button */
+    border-radius: 50%;
+    background-color: #333;
+    transition: all 0.2s ease;
+}
+
+#mainMenu .theme-selection input[type="radio"]:checked + label::before {
+    background-color: #00ffcc; /* Füllfarbe bei Auswahl */
+    box-shadow: 0 0 8px rgba(0, 255, 204, 0.7); /* Glühen bei Auswahl */
+    border-color: #00ffcc;
+}
+
+#mainMenu .theme-selection label::after {
+    content: '';
+    position: absolute;
+    left: 4px;
+    top: 50%;
+    transform: translateY(-50%);
+    width: 10px;
+    height: 10px;
+    background-color: #121212; /* Innerer Punkt des Radio-Buttons */
+    border-radius: 50%;
+    opacity: 0;
+    transition: all 0.2s ease;
+}
+
+#mainMenu .theme-selection input[type="radio"]:checked + label::after {
+    opacity: 1;
+}
+
+/* NEU: Styles für Board-Style-Auswahl (ähnlich wie Theme-Auswahl) */
+#mainMenu .board-style-selection {
+    margin-top: 15px; /* Abstand zum oberen Element */
+    display: flex;
+    gap: 30px; /* Abstand zwischen den Radio-Buttons */
+}
+
+#mainMenu .board-style-selection label {
+    cursor: pointer;
+    position: relative;
+    padding-left: 25px; /* Platz für benutzerdefinierten Radio-Button */
+}
+
+#mainMenu .board-style-selection input[type="radio"] {
+    opacity: 0; /* Original-Radio-Button verstecken */
+    position: absolute;
+}
+
+#mainMenu .board-style-selection label::before {
+    content: '';
+    position: absolute;
+    left: 0;
+    top: 50%;
+    transform: translateY(-50%);
+    width: 18px;
+    height: 18px;
+    border: 2px solid #00cc99; /* Rahmen für den Radio-Button */
+    border-radius: 50%;
+    background-color: #333;
+    transition: all 0.2s ease;
+}
+
+#mainMenu .board-style-selection input[type="radio"]:checked + label::before {
+    background-color: #00ffcc; /* Füllfarbe bei Auswahl */
+    box-shadow: 0 0 8px rgba(0, 255, 204, 0.7); /* Glühen bei Auswahl */
+    border-color: #00ffcc;
+}
+
+#mainMenu .board-style-selection label::after {
+    content: '';
+    position: absolute;
+    left: 4px;
+    top: 50%;
+    transform: translateY(-50%);
+    width: 10px;
+    height: 10px;
+    background-color: #121212; /* Innerer Punkt des Radio-Buttons */
+    border-radius: 50%;
+    opacity: 0;
+    transition: all 0.2s ease;
+}
+
+#mainMenu .board-style-selection input[type="radio"]:checked + label::after {
+    opacity: 1;
+}
+
+
+#mainMenu button {
+    padding: 15px 35px; /* Größerer Button */
+    background: linear-gradient(45deg, #ff00cc, #00ffcc); /* Farbverlauf für Button */
+    color: #121212; /* Dunkler Text auf hellem Button */
+    border: none;
+    border-radius: 10px;
+    font-size: 1.3em; /* Größere Schrift im Button */
+    cursor: pointer;
+    box-shadow: 0 0 15px rgba(255, 0, 204, 0.6); /* Schatten für Button-Glühen */
+    transition: all 0.3s ease;
+    font-weight: bold;
+    text-transform: uppercase; /* Großbuchstaben */
+    letter-spacing: 1px;
+}
+
+#mainMenu button:hover {
+    background: linear-gradient(45deg, #ee00bb, #00eecc); /* Leichter Farbwechsel beim Hover */
+    box-shadow: 0 0 25px rgba(255, 0, 204, 0.8), 0 0 10px rgba(0, 255, 204, 0.8);
+    transform: translateY(-2px); /* Leichter "Pop"-Effekt */
+}
+
+/* === Scoreboard und Info-Boxen === */
+.game-info, #scoreboard {
+    position: absolute;
+    background-color: rgba(10, 10, 10, 0.9); /* Dunkler, leicht transparenter Hintergrund */
+    padding: 15px 20px;
+    border-radius: 8px;
+    color: #00ffcc; /* Neon-Textfarbe */
+    font-size: 1.1em;
+    z-index: 10;
+    border: 1px solid #00cc99; /* Neon-Rand */
+    box-shadow: 0 0 10px rgba(0, 255, 204, 0.5);
+}
+
+#gameModeInfo {
+    top: 10px;
+    left: 50%;
+    transform: translateX(-50%);
+}
+
+#scoreboard {
+    top: 30px; /* Vom oberen Rand 30px entfernt */
+    left: 10px; /* Nach links verschieben */
+    right: auto;
+    width: 250px;
+}
+
+#scoreboard h3 {
+    margin-top: 0;
+    color: #ff00cc; /* Neon-Pink für Überschrift */
+    font-size: 1.4em;
+    text-shadow: 0 0 5px rgba(255, 0, 204, 0.6);
+}
+
+#scoreboard ul {
+    list-style: none;
+    padding: 0;
+    margin: 0;
+}
+
+#scoreboard li {
+    padding: 5px 0;
+    border-bottom: 1px solid rgba(0, 255, 204, 0.2); /* Dezenterer Neon-Border */
+    font-family: 'Consolas', 'Courier New', monospace; /* Monospace für 'Code'-Gefühl */
+}
+
+#scoreboard li:last-child {
+    border-bottom: none;
+}
+
+#toggleGraphicsButton {
+    position: absolute;
+    top: 10px;
+    left: 10px;
+    padding: 8px 15px;
+    background-color: #6c757d;
+    color: white;
+    border: none;
+    border-radius: 5px;
+    cursor: pointer;
+    z-index: 10;
+    transition: background-color 0.3s ease;
+}
+
+#toggleGraphicsButton:hover {
+    background-color: #5a6268;
+}
+
+/* Standardmäßig sind die Spielelemente ausgeblendet und das Menü wird per JS eingeblendet */
+body > *:not(#mainMenu) {
+    display: none;
+}
+
